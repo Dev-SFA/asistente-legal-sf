@@ -1,0 +1,7 @@
+langchain
+openai
+llama-index-core
+pydantic
+python-dotenv
+requests
+gcsfs
