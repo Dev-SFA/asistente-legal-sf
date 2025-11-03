@@ -8,3 +8,4 @@ gcsfs
 python-dotenv
 llama-index-vector-stores-pinecone
 pinecone-client
+llama-index-readers-file
