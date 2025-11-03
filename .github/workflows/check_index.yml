@@ -1,7 +1,7 @@
 name: Verificar Conteo de Pinecone
 
 on:
-  # Solo se ejecuta manualmente
+  # Solo se ejecuta manualmente para evitar costos de embeddings
   workflow_dispatch:
 
 jobs:
@@ -22,9 +22,8 @@ jobs:
           python-version: '3.11'
 
       - name: Instalar Dependencias Mínimas
-        # Solo necesitamos 'pinecone-client' para esta tarea
-        run: pip install pinecone-client
+        # ESTE FUE EL CAMBIO CLAVE: Cambiamos 'pinecone-client' por 'pinecone'
+        run: pip install pinecone
 
       - name: Ejecutar Script de Verificación
-        # Se ejecuta desde la raíz del repositorio
         run: python check_pinecone.py
