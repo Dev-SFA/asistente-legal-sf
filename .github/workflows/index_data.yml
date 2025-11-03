@@ -1,41 +1,40 @@
-name: Generar y Subir Indice de Datos
+name: Index Legal Documents to Pinecone
 
-# Se ejecuta al hacer push en la rama principal o manualmente
 on:
   push:
     branches:
       - main
-    paths:
-      - 'index_data.py'
-      - 'requirements.txt'
-  # Permite ejecutar el workflow manualmente desde la pestaña Actions
   workflow_dispatch:
 
 jobs:
-  index_data:
-    runs-on: ubuntu-latest # Máquina virtual potente
+  index:
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11' # Versión compatible
+          python-version: '3.11'
 
-      # INSTALACIÓN CRÍTICA DEL SISTEMA (POPPLER Y TESSERACT)
-      # Esto resuelve los errores de PDF y OCR
-      - name: Install System Dependencies (Poppler and Tesseract)
-        run: sudo apt-get update && sudo apt-get install -y poppler-utils tesseract-ocr
+      - name: Install System Dependencies for OCR and PDF
+        run: |
+          sudo apt-get update
+          # Dependencia para procesar PDFs de forma nativa (poppler)
+          sudo apt-get install -y poppler-utils  
+          # OCR base
+          sudo apt-get install -y tesseract-ocr  
+          # Soporte de idioma español (CORRECCIÓN FINAL)
+          sudo apt-get install -y tesseract-ocr-spa 
 
-      - name: Install Python Dependencies
+      - name: Set up Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Run index_data.py (Indexación)
-        run: python index_data.py
+      - name: Run indexation script
         env:
-          # Se pasan las claves y la URL de los datos desde los Secretos de GitHub
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
           DATA_URL: ${{ secrets.DATA_URL }}
+        run: python index_data.py
