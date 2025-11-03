@@ -1,10 +1,6 @@
 openai
-llama-index-core
-llama-index-llms-openai
-llama-index-embeddings-openai
+pinecone
 requests
-gcsfs
-python-dotenv
-llama-index-vector-stores-pinecone
-pinecone-client
-llama-index-readers-file
+tqdm
+unstructured
+lxml
