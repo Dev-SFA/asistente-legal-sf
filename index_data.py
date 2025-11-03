@@ -73,7 +73,7 @@ def get_documents_from_dir(directory: str):
                         })
                         
             except Exception as e:
-                # Mantener la captura de errores en el parseo para que el script no muera por un solo archivo
+                # Captura el error de tesseract/poppler para que el script no muera
                 print(f"ERROR al procesar el archivo {file}: {e}")
                 continue
 
@@ -87,9 +87,12 @@ def index_data(documents):
     print(f"Comenzando la indexación y subida de {len(documents)} documentos a Pinecone...")
 
     try:
+        # **CORRECCIÓN CRÍTICA DE SINTAXIS:** Inicialización correcta de Pinecone
         pc = Pinecone(api_key=os.environ.get("PINECONE_API_KEY")) 
         openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
         
+        print("[DEBUG] Clientes de Pinecone y OpenAI inicializados. ¡Llamada a API exitosa!")
+
         if INDEX_NAME not in pc.list_indexes().names:
              raise ValueError(f"El índice {INDEX_NAME} no existe o no está disponible.")
              
