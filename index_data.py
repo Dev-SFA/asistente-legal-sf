@@ -9,7 +9,7 @@ from pinecone import Pinecone
 from unstructured.partition.auto import partition
 from unstructured.chunking.title import chunk_by_title
 import uuid
-import unicodedata # <--- LIBRERÍA IMPORTADA PARA SANITIZACIÓN
+import unicodedata 
 
 # --- CONFIGURACIÓN ---
 INDEX_NAME = "sf-abogados-01"
@@ -48,7 +48,6 @@ def download_and_extract_data(url: str, output_dir: str):
         return False
 
 
-# Función para sanitizar el nombre de archivo
 def sanitize_filename(filename):
     """Convierte el nombre de archivo a ASCII puro, elimina acentos y reemplaza caracteres no seguros."""
     # 1. Normalizar a NFD (Canonical Decomposition) y codificar a ASCII, ignorando lo que no se puede mapear.
@@ -87,13 +86,13 @@ def index_data_optimized(directory: str):
             file_path = os.path.join(root, file)
             print(f"  -> Procesando archivo: {file_path}")
             
-            # --- CORRECCIÓN CRÍTICA DE ID ---
+            # --- SANITIZACIÓN DE ID ---
             sanitized_file = sanitize_filename(file)
             # --------------------------------
 
             try:
-                # 1. Particionamiento: dividir el documento
-                elements = partition(filename=file_path)
+                # 1. Particionamiento: dividir el documento y especificar idiomas (Español/Inglés)
+                elements = partition(filename=file_path, languages=['spa', 'eng'])
                 
                 # 2. Chunking: agrupar en fragmentos lógicos
                 chunks = chunk_by_title(elements)
