@@ -3,11 +3,14 @@ name: Generar y Subir Indice de Datos
 on:
   # Permite ejecutar el workflow manualmente desde la interfaz de GitHub
   workflow_dispatch:
-  # También se puede disparar en push a la rama principal (main/master)
-  push:
-    branches:
-      - main
-      - master
+  # ------------------------------------------------------------------
+  # DESACTIVADO: La indexación ya no se ejecutará en cada push.
+  # Se ejecuta SÓLO manualmente (workflow_dispatch) para evitar costos.
+  # ------------------------------------------------------------------
+  # push:
+  #   branches:
+  #     - main
+  #     - master
 
 jobs:
   index_data:
