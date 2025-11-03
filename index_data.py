@@ -9,6 +9,7 @@ from pinecone import Pinecone
 from unstructured.partition.auto import partition
 from unstructured.chunking.title import chunk_by_title
 import uuid
+import unicodedata # <--- LIBRERÍA IMPORTADA PARA SANITIZACIÓN
 
 # --- CONFIGURACIÓN ---
 INDEX_NAME = "sf-abogados-01"
@@ -47,20 +48,29 @@ def download_and_extract_data(url: str, output_dir: str):
         return False
 
 
+# Función para sanitizar el nombre de archivo
+def sanitize_filename(filename):
+    """Convierte el nombre de archivo a ASCII puro, elimina acentos y reemplaza caracteres no seguros."""
+    # 1. Normalizar a NFD (Canonical Decomposition) y codificar a ASCII, ignorando lo que no se puede mapear.
+    normalized = unicodedata.normalize('NFKD', filename).encode('ascii', 'ignore').decode('utf-8')
+    # 2. Reemplazar caracteres especiales y espacios por guiones bajos.
+    safe_chars = ''.join(c if c.isalnum() or c in ('.', '-') else '_' for c in normalized).replace('__', '_')
+    # 3. Eliminar guiones bajos al inicio/final que puedan ser creados por la limpieza.
+    return safe_chars.strip('_')
+
+
 def index_data_optimized(directory: str):
-    """Procesa documentos de forma optimizada, generando embeddings y subiendo a Pinecone
-    sin cargar todos los documentos a la memoria.
-    """
+    """Procesa documentos de forma optimizada, generando embeddings y subiendo a Pinecone."""
     print("Comenzando la indexación optimizada y subida a Pinecone...")
 
     try:
-        # Inicialización de clientes (corregido)
+        # Inicialización de clientes
         pc = Pinecone(api_key=os.environ.get("PINECONE_API_KEY")) 
         openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
         
-        print("[DEBUG] Clientes de Pinecone y OpenAI inicializados. Verificación de índice omitida.")
+        print("[DEBUG] Clientes de Pinecone y OpenAI inicializados.")
 
-        # Inicializar el índice (asumiendo que existe para evitar el error de list_indexes)
+        # Inicializar el índice (asumiendo que existe)
         pinecone_index = pc.Index(INDEX_NAME)
 
     except Exception as e:
@@ -77,6 +87,10 @@ def index_data_optimized(directory: str):
             file_path = os.path.join(root, file)
             print(f"  -> Procesando archivo: {file_path}")
             
+            # --- CORRECCIÓN CRÍTICA DE ID ---
+            sanitized_file = sanitize_filename(file)
+            # --------------------------------
+
             try:
                 # 1. Particionamiento: dividir el documento
                 elements = partition(filename=file_path)
@@ -88,12 +102,13 @@ def index_data_optimized(directory: str):
                 for i, chunk in enumerate(chunks):
                     if chunk.text.strip():
                         text = chunk.text
-                        chunk_id = f"{file}_{i}_{uuid.uuid4()}" # ID único para evitar colisiones
+                        # Usar el nombre de archivo SANITIZADO para el ID del vector
+                        chunk_id = f"{sanitized_file}_{i}_{uuid.uuid4()}" 
                         
                         # Generar embeddings para el chunk
                         try:
                             # [DEBUG] Mensaje antes de la llamada a OpenAI
-                            print(f"[DEBUG] Generando embedding para chunk {total_vectors+1}. Total actual de vectores: {total_vectors}")
+                            print(f"[DEBUG] Generando embedding para chunk {total_vectors+1}. Total actual de vectores: {total_vectors}. ID: {chunk_id[:50]}...")
                             
                             response = openai_client.embeddings.create(
                                 input=[text],
@@ -106,7 +121,7 @@ def index_data_optimized(directory: str):
                                 'id': chunk_id,
                                 'values': embedding,
                                 'metadata': {
-                                    "file_name": file,
+                                    "file_name": file, # Guardamos el nombre original en metadata
                                     "chunk_id": chunk_id,
                                     "text": text
                                 }
