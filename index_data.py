@@ -8,6 +8,7 @@ from openai import OpenAI
 from pinecone import Pinecone
 from unstructured.partition.auto import partition
 from unstructured.chunking.title import chunk_by_title
+import uuid
 
 # --- CONFIGURACIÓN ---
 INDEX_NAME = "sf-abogados-01"
@@ -46,52 +47,18 @@ def download_and_extract_data(url: str, output_dir: str):
         return False
 
 
-def get_documents_from_dir(directory: str):
-    """Carga documentos, los divide en nodos (chunks) y extrae texto."""
-    all_documents = []
-    
-    for root, _, files in os.walk(directory):
-        for file in files:
-            file_path = os.path.join(root, file)
-            print(f"  -> Procesando archivo: {file_path}")
-            
-            try:
-                # 1. Particionamiento: dividir el documento en elementos estructurales
-                elements = partition(filename=file_path)
-                
-                # 2. Chunking: agrupar los elementos en fragmentos lógicos (chunks)
-                chunks = chunk_by_title(elements)
-                
-                for i, chunk in enumerate(chunks):
-                    if chunk.text.strip():
-                        all_documents.append({
-                            "text": chunk.text,
-                            "metadata": {
-                                "file_name": file,
-                                "chunk_id": f"{file}_{i}",
-                            }
-                        })
-                        
-            except Exception as e:
-                # Captura el error de tesseract/poppler para que el script no muera
-                print(f"ERROR al procesar el archivo {file}: {e}")
-                continue
-
-    # [DEBUG] Nuevo mensaje de debug para confirmar que terminó el parseo
-    print(f"\n[DEBUG] FINAL CONTEO DE DOCUMENTOS LISTOS PARA INDEXAR: {len(all_documents)}")
-    return all_documents
-
-
-def index_data(documents):
-    """Genera embeddings en lotes y sube los vectores a Pinecone."""
-    print(f"Comenzando la indexación y subida de {len(documents)} documentos a Pinecone...")
+def index_data_optimized(directory: str):
+    """Procesa documentos de forma optimizada, generando embeddings y subiendo a Pinecone
+    sin cargar todos los documentos a la memoria.
+    """
+    print("Comenzando la indexación optimizada y subida a Pinecone...")
 
     try:
         # **CORRECCIÓN CRÍTICA DE SINTAXIS:** Inicialización correcta de Pinecone
         pc = Pinecone(api_key=os.environ.get("PINECONE_API_KEY")) 
         openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
         
-        print("[DEBUG] Clientes de Pinecone y OpenAI inicializados. ¡Llamada a API exitosa!")
+        print("[DEBUG] Clientes de Pinecone y OpenAI inicializados.")
 
         if INDEX_NAME not in pc.list_indexes().names:
              raise ValueError(f"El índice {INDEX_NAME} no existe o no está disponible.")
@@ -104,51 +71,77 @@ def index_data(documents):
 
     vectors_to_upsert = []
     total_vectors = 0
+    document_count = 0
 
-    # Usamos tqdm para mostrar el progreso
-    for i in tqdm(range(0, len(documents), BATCH_SIZE), desc="Generando embeddings y subiendo a Pinecone"):
-        batch = documents[i:i + BATCH_SIZE]
-        texts = [doc["text"] for doc in batch]
-
-        # [DEBUG] Nuevo mensaje antes de la llamada a OpenAI
-        print(f"[DEBUG] Generando embeddings para lote {i} a {i + len(batch)}")
-        
-        # Generar embeddings
-        try:
-            response = openai_client.embeddings.create(
-                input=texts,
-                model=EMBEDDING_MODEL
-            )
-            embeddings = [data.embedding for data in response.data]
-        except Exception as e:
-            print(f"Error al generar embeddings en el lote {i}: {e}. Saltando lote.")
-            continue
-
-        # Preparar vectores para upsert
-        for j, doc in enumerate(batch):
-            vector = {
-                'id': doc['metadata']['chunk_id'],
-                'values': embeddings[j],
-                'metadata': doc['metadata'] | {"text": doc["text"]}
-            }
-            vectors_to_upsert.append(vector)
-            total_vectors += 1
-
-        # Subir el lote a Pinecone
-        if len(vectors_to_upsert) >= BATCH_SIZE:
-            # [DEBUG] Nuevo mensaje antes de la llamada a Pinecone
-            print(f"[DEBUG] Subiendo lote de {len(vectors_to_upsert)} vectores a Pinecone.")
+    # Iterar sobre los archivos en el directorio
+    for root, _, files in os.walk(directory):
+        for file in files:
+            file_path = os.path.join(root, file)
+            print(f"  -> Procesando archivo: {file_path}")
+            
             try:
-                pinecone_index.upsert(
-                    vectors=vectors_to_upsert,
-                    namespace=""
-                )
-                vectors_to_upsert = []
-            except Exception as e:
-                print(f"Error al subir lote a Pinecone: {e}. Descartando lote fallido.")
-                vectors_to_upsert = []
+                # 1. Particionamiento: dividir el documento
+                elements = partition(filename=file_path)
+                
+                # 2. Chunking: agrupar en fragmentos lógicos
+                chunks = chunk_by_title(elements)
+                
+                # 3. Procesar los chunks del archivo
+                for i, chunk in enumerate(chunks):
+                    if chunk.text.strip():
+                        text = chunk.text
+                        chunk_id = f"{file}_{i}_{uuid.uuid4()}" # ID único para evitar colisiones
+                        
+                        # Generar embeddings para el chunk
+                        try:
+                            # [DEBUG] Mensaje antes de la llamada a OpenAI
+                            print(f"[DEBUG] Generando embedding para chunk {total_vectors+1}")
+                            
+                            response = openai_client.embeddings.create(
+                                input=[text],
+                                model=EMBEDDING_MODEL
+                            )
+                            embedding = response.data[0].embedding
+                            
+                            # Preparar vector para upsert
+                            vector = {
+                                'id': chunk_id,
+                                'values': embedding,
+                                'metadata': {
+                                    "file_name": file,
+                                    "chunk_id": chunk_id,
+                                    "text": text
+                                }
+                            }
+                            vectors_to_upsert.append(vector)
+                            total_vectors += 1
 
-    # Subir vectores restantes
+                        except Exception as e:
+                            print(f"Error al generar embedding para chunk en {file}: {e}. Saltando chunk.")
+                            continue
+
+                        # Subir el lote a Pinecone cuando alcance BATCH_SIZE
+                        if len(vectors_to_upsert) >= BATCH_SIZE:
+                            # [DEBUG] Mensaje antes de la llamada a Pinecone
+                            print(f"[DEBUG] Subiendo lote de {len(vectors_to_upsert)} vectores a Pinecone. Total: {total_vectors}")
+                            try:
+                                pinecone_index.upsert(
+                                    vectors=vectors_to_upsert,
+                                    namespace=""
+                                )
+                                vectors_to_upsert = [] # Limpiar el lote para el siguiente
+                            except Exception as e:
+                                print(f"Error al subir lote a Pinecone: {e}. Descartando lote fallido.")
+                                vectors_to_upsert = []
+
+            except Exception as e:
+                print(f"ERROR FATAL al procesar el archivo {file}: {e}")
+                continue
+            
+            document_count += 1
+            print(f"  -> Archivo {document_count} procesado. Total de vectores subidos: {total_vectors}")
+
+    # Subir vectores restantes (lote final)
     if vectors_to_upsert:
         print(f"[DEBUG] Subiendo lote final de {len(vectors_to_upsert)} vectores restantes.")
         try:
@@ -156,11 +149,12 @@ def index_data(documents):
                 vectors=vectors_to_upsert,
                 namespace=""
             )
+            total_vectors += len(vectors_to_upsert)
         except Exception as e:
             print(f"Error al subir lote final a Pinecone: {e}")
 
     print("\n--------------------------------------------------")
-    print(f"Indesación completada. Total de vectores procesados: {total_vectors}")
+    print(f"Indesación completada. Total de vectores procesados y subidos: {total_vectors}")
     print("--------------------------------------------------")
 
 
@@ -170,14 +164,7 @@ if __name__ == "__main__":
     if not download_and_extract_data(DATA_URL, TEMP_DATA_DIR):
         print("PROCESO FALLIDO: No se pudieron descargar y extraer los datos.")
     else:
-        print(f"Cargando documentos desde el directorio {TEMP_DATA_DIR}...")
-        documents_to_index = get_documents_from_dir(TEMP_DATA_DIR)
-        print(f"Cargados {len(documents_to_index)} documentos listos para indexar.")
-
-        if documents_to_index:
-            index_data(documents_to_index)
-        else:
-            print("No se encontraron documentos para indexar.")
+        index_data_optimized(TEMP_DATA_DIR)
 
     print("Iniciando limpieza de archivos temporales...")
     if os.path.exists(TEMP_DATA_DIR):
