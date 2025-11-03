@@ -24,16 +24,19 @@ jobs:
         with:
           python-version: '3.11' # Versión compatible
 
-      - name: Install Dependencies
-        # Esto usará el requirements.txt limpio que acabamos de subir
+      # INSTALACIÓN CRÍTICA DEL SISTEMA (POPPLER)
+      # Esto resuelve el error "Unable to get page count. Is poppler installed and in PATH?"
+      - name: Install System Dependencies (Poppler)
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+
+      - name: Install Python Dependencies
+        # Esto usará el requirements.txt que incluye unstructured[pdf]
         run: pip install -r requirements.txt
 
       - name: Run index_data.py (Indexación)
         run: python index_data.py
         env:
-          # Las claves de OpenAI y Pinecone son necesarias para generar embeddings y subir los vectores.
+          # Se pasan las claves y la URL de los datos desde los Secretos de GitHub
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
-          
-          # ¡CORRECCIÓN CLAVE! Ahora pasamos la URL de los datos al script.
           DATA_URL: ${{ secrets.DATA_URL }}
