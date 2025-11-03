@@ -12,17 +12,15 @@ def check_count():
     pinecone_api_key = os.environ.get("PINECONE_API_KEY")
     
     if not pinecone_api_key:
-        # En GitHub Actions esto no fallará, pero es bueno para pruebas locales
         print("Error: La variable de entorno PINECONE_API_KEY no está configurada.")
         return
 
     # 2. Inicializar cliente de Pinecone
     try:
-        # Nota: El 'environment' ya no es necesario para Serverless,
-        # pero el cliente acepta el parámetro por compatibilidad si está en el entorno
         pc = Pinecone(api_key=pinecone_api_key) 
         
         # 3. Conectar al índice
+        # CORRECCIÓN: Se añaden los PARÉNTESIS a list_indexes() para corregir el error
         if INDEX_NAME not in pc.list_indexes().names:
              print(f"Error: El índice '{INDEX_NAME}' no existe.")
              return
