@@ -6,3 +6,5 @@ llama-index-embeddings-openai
 requests
 gcsfs
 python-dotenv
+llama-index-vector-stores-pinecone
+pinecone-client
