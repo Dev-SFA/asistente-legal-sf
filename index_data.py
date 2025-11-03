@@ -2,13 +2,13 @@ import os
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, StorageContext
 from llama_index.core.settings import Settings 
 from llama_index.llms.openai import OpenAI
-from llama_index.core.embeddings import resolve_embed_model # <--- Importación corregida
+from llama_index.embeddings.openai import OpenAIEmbedding # <--- Importación REVERTIDA y corregida
 from dotenv import load_dotenv
 
 # --- RUTAS ---
 # Directorio donde están tus documentos (ej: archivos PDF, DOCX)
 DATA_DIR = "./data" 
-# Directorio donde se guardará el índice creado. ¡DEBE coincidir con el workflow de GitHub!
+# Directorio donde se guardará el índice creado.
 INDEX_DIR = "./storage"
 
 def configure_settings():
@@ -22,8 +22,9 @@ def configure_settings():
         print("ERROR: La variable de entorno OPENAI_API_KEY no está configurada. Saliendo.")
         raise EnvironmentError("OPENAI_API_KEY es requerida para la indexación.")
 
-    # 3. Configurar el modelo de embeddings (¡CORRECCIÓN! Usando el método de resolución de Llama Index)
-    Settings.embed_model = resolve_embed_model("openai:text-embedding-3-small")
+    # 3. Configurar el modelo de embeddings (¡REVERTIDO a la clase directa!)
+    # Esto funciona ahora porque 'llama-index-embeddings-openai' está en requirements.txt
+    Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-small")
     
     # 4. Configurar el LLM por defecto 
     Settings.llm = OpenAI(model="gpt-4o") 
@@ -51,17 +52,18 @@ def build_knowledge_base():
     # 2. Cargar documentos
     print(f"Cargando documentos desde: {DATA_DIR}...")
     try:
+        # Asegúrate de que tienes la carpeta './data' con documentos
+        if not os.path.exists(DATA_DIR) or not os.listdir(DATA_DIR):
+             raise FileNotFoundError(f"No se encontraron archivos en el directorio de datos: {DATA_DIR}")
+             
         reader = SimpleDirectoryReader(input_dir=DATA_DIR, exclude_hidden=False)
         documents = reader.load_data()
     except Exception as e:
-        print(f"ERROR al cargar documentos: {e}")
-        if not os.listdir(DATA_DIR):
-            print("El directorio 'data/' está vacío. Asegúrate de tener documentos allí.")
+        print(f"❌ ERROR al cargar documentos: {e}")
         raise
     
     if not documents:
         print("ADVERTENCIA: No se encontraron documentos válidos para indexar.")
-        # Salimos sin error si no hay documentos (aunque debería haberlos)
         return
 
     # 3. Construir el índice
