@@ -3,7 +3,7 @@ import logging
 import zipfile
 import shutil
 from pathlib import Path
-from llama_index.readers.file.base import SimpleDirectoryReader
+from llama_index.core import SimpleDirectoryReader
 from llama_index.indices.vector_store import VectorStoreIndex
 from llama_index.vector_stores.pinecone import PineconeVectorStore
 from llama_index.embeddings.openai import OpenAIEmbedding
@@ -110,3 +110,4 @@ def run_indexing():
 # Ejecutar la función principal
 if __name__ == "__main__":
     run_indexing()
+
