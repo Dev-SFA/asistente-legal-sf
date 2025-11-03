@@ -1,113 +1,162 @@
 import os
-import logging
+import requests
 import zipfile
 import shutil
 from pathlib import Path
-from llama_index.core import SimpleDirectoryReader
-from llama_index.indices.vector_store import VectorStoreIndex
-from llama_index.vector_stores.pinecone import PineconeVectorStore
+
+# **Correcciones de Importación FINALIZADAS:**
+# Las clases principales se importan ahora desde el módulo 'llama_index.core'
+from llama_index.core import SimpleDirectoryReader, VectorStoreIndex
 from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_index.vector_stores.pinecone import PineconeVectorStore
 from llama_index.core.settings import Settings
-from llama_index.text_splitter import TokenTextSplitter
+
+# Librería de Pinecone para la inicialización
 from pinecone import Pinecone
-import requests
 
-# --- 1. CONFIGURACIÓN INICIAL ---
-# Configurar Logger para ver el progreso en los logs de GitHub Actions
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Configurar el Embedder de OpenAI
-# El modelo 'text-embedding-3-small' es el más económico y eficiente.
-Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-small")
-
-# Configurar el Chunking (Fragmentación)
-# Usamos un tamaño grande (2048) para reducir el número total de vectores a subir.
-Settings.text_splitter = TokenTextSplitter(chunk_size=2048, chunk_overlap=50)
-
-# --- 2. CONSTANTES DE PINE CONE (LEÍDAS DE GITHUB SECRETS) ---
-PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
-PINECONE_ENVIRONMENT = os.environ.get("PINECONE_ENVIRONMENT")
-INDEX_NAME = os.environ.get("PINECONE_INDEX_NAME")
+# --- CONFIGURACIÓN ---
+# La URL de tu archivo ZIP en el hosting
 DATA_URL = "http://mondoviaggi.ec/data.zip"
-TEMP_DIR = Path("./temp_data")
+# El nombre del archivo ZIP
+ZIP_FILENAME = "data.zip"
+# Directorio temporal para la descarga y extracción
+TEMP_DIR = "temp_data"
+# Nombre de tu índice en Pinecone
+INDEX_NAME = "sf-abogados-01"
 
-# --- 3. FUNCIÓN PRINCIPAL DE INDEXACIÓN ---
-def run_indexing():
-    # Verificación de secretos cruciales
-    if not all([PINECONE_API_KEY, PINECONE_ENVIRONMENT, INDEX_NAME]):
-        logger.error("ERROR: Faltan variables de entorno de Pinecone. Revisa los GitHub Secrets.")
-        return
+def download_and_extract_data(url: str, zip_path: Path, extract_dir: Path):
+    """Descarga el archivo ZIP y lo extrae en un directorio temporal."""
+    print(f"Descargando datos desde: {url}")
+    
+    # Asegurar que la ruta temporal exista y esté vacía
+    if extract_dir.exists():
+        shutil.rmtree(extract_dir)
+    extract_dir.mkdir(parents=True, exist_ok=True)
 
-    # --- A. DESCARGAR Y PREPARAR DATOS ---
-    logger.info(f"Descargando datos desde: {DATA_URL}")
+    # 1. Descargar el archivo
     try:
-        response = requests.get(DATA_URL, stream=True)
-        if response.status_code == 200:
-            zip_path = Path("data.zip")
-            with open(zip_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            logger.info("Descarga completada. Extrayendo archivos...")
-            
-            # Crear directorio temporal
-            TEMP_DIR.mkdir(exist_ok=True)
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(TEMP_DIR)
-            os.remove(zip_path) # Limpiar el ZIP descargado
-        else:
-            logger.error(f"ERROR: No se pudo descargar el ZIP. Código de estado: {response.status_code}")
-            return
-    except Exception as e:
-        logger.error(f"Error durante la descarga o extracción: {e}")
-        return
+        response = requests.get(url, stream=True)
+        response.raise_for_status() # Lanza un error para códigos de estado HTTP 4xx/5xx
 
-    # --- B. CONEXIÓN E INDEXACIÓN A PINECONE ---
-    
-    # 1. Conexión a Pinecone
+        with open(zip_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        print("Descarga completada.")
+    except requests.exceptions.RequestException as e:
+        print(f"Error durante la descarga: {e}")
+        # Intentar limpiar el archivo si se creó parcialmente
+        if zip_path.exists():
+            zip_path.unlink()
+        raise
+
+    # 2. Extraer el contenido
     try:
-        pc = Pinecone(api_key=PINECONE_API_KEY)
-        # Nota: Llama Index maneja el 'environment' internamente con el host del índice
-    except Exception as e:
-        logger.error(f"Error al inicializar Pinecone: {e}")
-        return
+        print(f"Extrayendo archivos a: {extract_dir.resolve()}")
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            # Extraer solo si no es un archivo de un solo nivel
+            members = zip_ref.namelist()
+            if len(members) == 1 and members[0].endswith('/'):
+                # Si solo contiene una carpeta raíz, extraer al directorio superior
+                zip_ref.extractall(extract_dir)
+                # Mover el contenido de la subcarpeta un nivel arriba
+                subfolder = extract_dir / members[0]
+                if subfolder.exists():
+                    for item in os.listdir(subfolder):
+                        shutil.move(subfolder / item, extract_dir)
+                    shutil.rmtree(subfolder)
+            else:
+                zip_ref.extractall(extract_dir)
+        print("Extracción completada.")
+    except zipfile.BadZipFile:
+        print("Error: El archivo descargado no es un ZIP válido.")
+        raise
+    finally:
+        # 3. Limpiar el archivo ZIP original
+        if zip_path.exists():
+            zip_path.unlink()
 
-    # 2. Conexión al índice
-    logger.info(f"Conectando al índice de Pinecone: {INDEX_NAME}...")
+def main():
+    """Ejecuta el proceso completo de descarga, indexación y subida a Pinecone."""
+    print("--- INICIANDO PROCESO DE INDEXACIÓN ---")
     
-    # Intentar obtener el índice y verificar si está en estado READY
-    if INDEX_NAME not in pc.list_indexes().names:
-        logger.error(f"ERROR: El índice '{INDEX_NAME}' no existe o no está listo. Revisa tu panel de Pinecone.")
-        return
-    
-    pinecone_index = pc.Index(INDEX_NAME)
-    vector_store = PineconeVectorStore(pinecone_index=pinecone_index)
-    
-    # 3. Cargar Documentos de la carpeta temporal
-    logger.info(f"Cargando documentos de la carpeta: {TEMP_DIR}")
-    documents = SimpleDirectoryReader(TEMP_DIR).load_data()
-    
-    # 4. Crear el índice y subir los vectores
-    logger.info(f"Comenzando la indexación y subida de {len(documents)} documentos a Pinecone...")
+    # 1. Rutas de Archivo
+    zip_path = Path(ZIP_FILENAME)
+    extract_dir = Path(TEMP_DIR)
 
-    # Esto inicia el proceso que solía tomar más de 6 horas
-    index = VectorStoreIndex.from_documents(
-        documents,
-        vector_store=vector_store, # Esto asegura que se sube a Pinecone, no a local
-        show_progress=True
-    )
-
-    logger.info(f"Indexación completada. Los vectores han sido subidos a Pinecone.")
-
-    # --- C. LIMPIEZA FINAL ---
+    # 2. Descargar y Extraer
     try:
-        # Eliminar la carpeta temporal una vez que el proceso termina
-        shutil.rmtree(TEMP_DIR)
-        logger.info("Limpieza completada. Directorio temporal eliminado.")
+        download_and_extract_data(DATA_URL, zip_path, extract_dir)
     except Exception as e:
-        logger.error(f"Error durante la limpieza: {e}")
+        print(f"Fallo en la fase de descarga/extracción: {e}")
+        # No limpiar para depuración si la descarga falló
+        return
 
-# Ejecutar la función principal
+    # 3. Configurar Entorno (usa los Secrets de GitHub Actions)
+    print("Configurando API Keys y modelos...")
+    try:
+        # OpenAI Key se lee de OPENAI_API_KEY en el entorno
+        Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-small")
+        
+        # Pinecone Key y Environment se leen de PINECONE_API_KEY y PINECONE_ENVIRONMENT
+        # El entorno ahora no se necesita con Serverless, pero se mantiene la conexión
+        pinecone_api_key = os.environ.get("PINECONE_API_KEY")
+        # El 'environment' (Region) ya no es obligatorio, pero lo pasamos si existe
+        pinecone_environment = os.environ.get("PINECONE_ENVIRONMENT", "us-east-1") 
+
+        # Inicializar cliente de Pinecone
+        pc = Pinecone(api_key=pinecone_api_key)
+    except Exception as e:
+        print(f"Error al configurar Pinecone/OpenAI: {e}")
+        shutil.rmtree(extract_dir)
+        return
+
+    # 4. Leer Documentos
+    print(f"Cargando documentos desde el directorio: {extract_dir.name}")
+    try:
+        # SimpleDirectoryReader ahora se importa desde llama_index.core
+        reader = SimpleDirectoryReader(input_dir=extract_dir.as_posix())
+        documents = reader.load_data()
+        print(f"Cargados {len(documents)} documentos.")
+    except Exception as e:
+        print(f"Error al leer documentos: {e}")
+        shutil.rmtree(extract_dir)
+        return
+
+    # 5. Crear el VectorStore y el Índice (Conexión a Pinecone)
+    print(f"Conectando al índice de Pinecone: {INDEX_NAME}")
+    try:
+        # El índice DEBE haber sido creado manualmente en Pinecone ANTES de correr este script.
+        # Esto ya lo hiciste: sf-abogados-01 con 1536 dimensiones.
+        pinecone_index = pc.Index(INDEX_NAME)
+
+        # Crear VectorStore que apunte al índice
+        vector_store = PineconeVectorStore(
+            pinecone_index=pinecone_index,
+            # Se usa el mismo modelo de embedding
+            embed_dim=1536  
+        )
+
+        print(f"Comenzando la indexación y subida de {len(documents)} documentos a Pinecone...")
+        # El VectorStoreIndex ahora se importa desde llama_index.core
+        index = VectorStoreIndex.from_documents(
+            documents=documents,
+            vector_store=vector_store,
+            show_progress=True # Muestra la barra de progreso
+        )
+        
+        print("Indexación completada. Los vectores han sido subidos a Pinecone.")
+
+    except Exception as e:
+        print(f"Error crítico durante la indexación/subida: {e}")
+        raise # Permitir que el proceso falle para ver el log completo
+
+    finally:
+        # 6. Limpieza
+        print("Iniciando limpieza de archivos temporales...")
+        if extract_dir.exists():
+            shutil.rmtree(extract_dir)
+        print("Limpieza completada. Directorio temporal eliminado.")
+        print("--- PROCESO FINALIZADO ---")
+
 if __name__ == "__main__":
-    run_indexing()
-
+    main()
