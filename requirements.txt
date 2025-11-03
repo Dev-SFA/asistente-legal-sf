@@ -4,3 +4,4 @@ requests
 tqdm
 unstructured[pdf]
 lxml
+tesseract-ocr-lang
