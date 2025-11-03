@@ -1,9 +1,9 @@
 import os
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, StorageContext
 from llama_index.core.settings import Settings 
-from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
-from dotenv import load_dotenv # Importado para uso local, aunque GitHub Actions usa variables de entorno
+from llama_index.core.embeddings import resolve_embed_model # <--- Importación corregida
+from dotenv import load_dotenv
 
 # --- RUTAS ---
 # Directorio donde están tus documentos (ej: archivos PDF, DOCX)
@@ -15,7 +15,6 @@ def configure_settings():
     """Configura los modelos y parámetros de Llama Index."""
     
     # 1. Carga de variables de entorno para pruebas locales
-    # En GitHub Actions, esto no es necesario, pero ayuda a la ejecución manual.
     load_dotenv()
     
     # 2. Verificar la clave de OpenAI
@@ -23,10 +22,10 @@ def configure_settings():
         print("ERROR: La variable de entorno OPENAI_API_KEY no está configurada. Saliendo.")
         raise EnvironmentError("OPENAI_API_KEY es requerida para la indexación.")
 
-    # 3. Configurar el modelo de embeddings (¡Más barato y mejor!)
-    Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-small")
+    # 3. Configurar el modelo de embeddings (¡CORRECCIÓN! Usando el método de resolución de Llama Index)
+    Settings.embed_model = resolve_embed_model("openai:text-embedding-3-small")
     
-    # 4. Configurar el LLM por defecto (usado para algunas operaciones de Llama Index)
+    # 4. Configurar el LLM por defecto 
     Settings.llm = OpenAI(model="gpt-4o") 
     
     # 5. Configurar el tamaño de chunking
@@ -43,7 +42,11 @@ def build_knowledge_base():
     print("========================================================")
 
     # 1. Configurar Modelos y Clave
-    configure_settings()
+    try:
+        configure_settings()
+    except EnvironmentError as e:
+        print(f"Fallo en la configuración inicial: {e}")
+        exit(1)
 
     # 2. Cargar documentos
     print(f"Cargando documentos desde: {DATA_DIR}...")
@@ -52,19 +55,18 @@ def build_knowledge_base():
         documents = reader.load_data()
     except Exception as e:
         print(f"ERROR al cargar documentos: {e}")
-        # Si no hay documentos, el script debe fallar para que la Action lo reporte.
         if not os.listdir(DATA_DIR):
             print("El directorio 'data/' está vacío. Asegúrate de tener documentos allí.")
         raise
     
     if not documents:
         print("ADVERTENCIA: No se encontraron documentos válidos para indexar.")
+        # Salimos sin error si no hay documentos (aunque debería haberlos)
         return
 
     # 3. Construir el índice
     print(f"Creando nuevo índice con {len(documents)} documento(s).")
     
-    # Creamos el contexto de almacenamiento sin intentar cargarlo (porque lo vamos a crear)
     storage_context = StorageContext.from_defaults()
 
     index = VectorStoreIndex.from_documents(
