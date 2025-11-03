@@ -1,0 +1,30 @@
+name: Verificar Conteo de Pinecone
+
+on:
+  # Solo se ejecuta manualmente
+  workflow_dispatch:
+
+jobs:
+  check_index:
+    runs-on: ubuntu-latest
+    
+    env:
+      PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
+      PINECONE_ENVIRONMENT: ${{ secrets.PINECONE_ENVIRONMENT }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar Dependencias Mínimas
+        # Solo necesitamos 'pinecone-client' para esta tarea
+        run: pip install pinecone-client
+
+      - name: Ejecutar Script de Verificación
+        # Se ejecuta desde la raíz del repositorio
+        run: python check_pinecone.py
