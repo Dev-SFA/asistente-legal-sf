@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 # --- CONFIGURACIÓN DE ARCHIVOS ---
 # ⚠️ IMPORTANTE: REEMPLAZA ESTA URL CON LA DIRECCIÓN DE TU ARCHIVO ZIP PÚBLICO
-DOCUMENTS_ZIP_URL = "http://tudominio.com/nombre_del_archivo.zip" # <-- ¡CÁMBIAME!
+DOCUMENTS_ZIP_URL = "http://mondoviaggi.ec/data.zip" # <-- ¡CÁMBIAME!
 # Directorio donde se descomprimirán los archivos temporalmente
 TEMP_DATA_DIR = "./temp_data" 
 # Directorio donde se guardará el índice (subido a GitHub)
@@ -116,3 +116,4 @@ def build_knowledge_base():
 
 if __name__ == "__main__":
     build_knowledge_base()
+
