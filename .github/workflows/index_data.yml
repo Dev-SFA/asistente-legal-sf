@@ -24,13 +24,12 @@ jobs:
         with:
           python-version: '3.11' # Versión compatible
 
-      # INSTALACIÓN CRÍTICA DEL SISTEMA (POPPLER)
-      # Esto resuelve el error "Unable to get page count. Is poppler installed and in PATH?"
-      - name: Install System Dependencies (Poppler)
-        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      # INSTALACIÓN CRÍTICA DEL SISTEMA (POPPLER Y TESSERACT)
+      # Esto resuelve los errores de PDF y OCR
+      - name: Install System Dependencies (Poppler and Tesseract)
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils tesseract-ocr
 
       - name: Install Python Dependencies
-        # Esto usará el requirements.txt que incluye unstructured[pdf]
         run: pip install -r requirements.txt
 
       - name: Run index_data.py (Indexación)
