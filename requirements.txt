@@ -1,5 +1,7 @@
 openai
 llama-index-core
 llama-index-llms-openai
+llama-index-embeddings-huggingface
 gcsfs
 python-dotenv
+
