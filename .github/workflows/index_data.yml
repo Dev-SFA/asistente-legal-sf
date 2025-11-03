@@ -1,52 +1,39 @@
 name: Generar y Subir Indice de Datos
 
+# Se ejecuta al hacer push en la rama principal o manualmente
 on:
-  # Permite ejecutar el workflow manualmente desde la interfaz de GitHub
+  push:
+    branches:
+      - main
+    paths:
+      - 'index_data.py'
+      - 'requirements.txt'
+  # Permite ejecutar el workflow manualmente desde la pestaña Actions
   workflow_dispatch:
-  # ------------------------------------------------------------------
-  # DESACTIVADO: La indexación ya no se ejecutará en cada push.
-  # Se ejecuta SÓLO manualmente (workflow_dispatch) para evitar costos.
-  # ------------------------------------------------------------------
-  # push:
-  #   branches:
-  #     - main
-  #     - master
 
 jobs:
   index_data:
-    # Corre en el último ambiente de Ubuntu disponible
-    runs-on: ubuntu-latest
-    
-    # Define las variables de entorno para las claves secretas
-    env:
-      # Las variables de entorno son leídas desde los Secrets de tu repositorio
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
-      PINECONE_ENVIRONMENT: ${{ secrets.PINECONE_ENVIRONMENT }} # Se mantiene por compatibilidad
+    runs-on: ubuntu-latest # Máquina virtual potente
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11' # Versión recomendada para LLM stacks
+          python-version: '3.11' # Versión compatible
 
-      - name: Instalar Dependencias
+      - name: Install Dependencies
+        # Esto usará el requirements.txt limpio que acabamos de subir
         run: pip install -r requirements.txt
 
-      - name: Ejecutar Script de Indexación (Sube a Pinecone)
-        # Este es el paso que corre tu index_data.py
-        # y que se encargará de la larga tarea de generar los embeddings
+      - name: Run index_data.py (Indexación)
         run: python index_data.py
-
-      # ----------------------------------------------------------------------
-      # PASOS DE GIT ELIMINADOS:
-      # Ya no se intenta hacer 'git add storage/' ni 'git commit' porque
-      # los vectores se suben directamente a la nube de Pinecone,
-      # lo que causaba el error 'fatal: pathspec 'storage/' did not match any files' (código 128).
-      # ----------------------------------------------------------------------
-
-      - name: Proceso de Indexación Finalizado
-        run: echo "El script de indexación finalizó con éxito. Revisa el log para ver el progreso de subida a Pinecone."
+        env:
+          # Las claves de OpenAI y Pinecone son necesarias para generar embeddings y subir los vectores.
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
+          
+          # ¡CORRECCIÓN CLAVE! Ahora pasamos la URL de los datos al script.
+          DATA_URL: ${{ secrets.DATA_URL }}
