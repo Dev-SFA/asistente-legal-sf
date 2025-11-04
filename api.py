@@ -9,7 +9,7 @@ from openai import OpenAI
 # --- CONFIGURACIÓN DE MODELOS Y LÍMITES ---
 INDEX_NAME = "sf-abogados-01"
 EMBEDDING_MODEL = "text-embedding-ada-002"
-GENERATION_MODEL = "gpt-4o-mini"  # ¡Modelo ultra-económico y de alta calidad!
+GENERATION_MODEL = "gpt-5-nano"  # ¡Modelo ultra-económico y de alta calidad!
 TOP_K = 5 
 
 # --- MODELO DE DATOS DE ENTRADA (Incluye reCAPTCHA) ---
