@@ -1,6 +1,5 @@
 openai
-pinecone
+pinecone-client
+fastapi
+uvicorn
 requests
-tqdm
-unstructured[pdf]
-lxml
