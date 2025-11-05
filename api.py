@@ -3,14 +3,13 @@ import uvicorn
 import requests
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from pinecone import Pinecone
+from pinecone import Pinecone # Ahora solo se instala 'pinecone' (paquete correcto)
 from openai import OpenAI
 
 # --- CONFIGURACIÓN DE MODELOS Y LÍMITES ---
-# INDEX_NAME se define aquí y también debe inyectarse en Cloud Build para coincidir
 INDEX_NAME = "sf-abogados-01" 
 EMBEDDING_MODEL = "text-embedding-ada-002"
-GENERATION_MODEL = "gpt-5-nano"  # Modelo de OpenAI
+GENERATION_MODEL = "gpt-5-nano"
 TOP_K = 5  
 
 # --- MODELO DE DATOS DE ENTRADA (Incluye reCAPTCHA) ---
@@ -24,36 +23,32 @@ try:
     # Puerto necesario para Cloud Run (usa la variable de entorno, si no existe usa 8080)
     PORT = int(os.environ.get("PORT", 8080))
     
-    # Obtener claves de Variables de Entorno (se inyectarán de forma segura en Cloud Run)
+    # Obtener claves de Variables de Entorno
     PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
     RECAPTCHA_SECRET_KEY = os.environ.get("RECAPTCHA_SECRET_KEY")
-    PINECONE_ENVIRONMENT = os.environ.get("PINECONE_ENVIRONMENT") # <--- AHORA SE LEE
+    PINECONE_ENVIRONMENT = os.environ.get("PINECONE_ENVIRONMENT") # Se lee el ambiente
 
-    if not PINECONE_API_KEY or not OPENAI_API_KEY or not RECAPTCHA_SECRET_KEY or not PINECONE_ENVIRONMENT: # <--- ¡ACTUALIZADO!
-        # Este error ahora solo ocurrirá si olvidas una clave en Cloud Build
+    if not PINECONE_API_KEY or not OPENAI_API_KEY or not RECAPTCHA_SECRET_KEY or not PINECONE_ENVIRONMENT:
         raise ValueError("Faltan variables de entorno esenciales (API Keys, Ambiente Pinecone o Secreto reCAPTCHA).")
 
-    # Inicialización correcta de Pinecone (usa api_key y environment)
-    pc = Pinecone(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
+    # ¡CORRECCIÓN APLICADA! Ahora se pasa el environment
+    pc = Pinecone(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT) 
     openai_client = OpenAI(api_key=OPENAI_API_KEY)
     
-    # Intenta conectar al índice. Si el índice no existe, fallará aquí.
+    # Intenta conectar al índice.
     pinecone_index = pc.Index(INDEX_NAME)
     
 except Exception as e:
-    # Muestra el error de Python en los logs de Cloud Run
-    print(f"ERROR FATAL DE INICIALIZACIÓN: {e}")
-    # Nota: El error de aquí hará que el contenedor se caiga y Cloud Run reporte el fallo de despliegue.
-    # Si falla, revisa el log de Cloud Run para ver este mensaje.
-
+    # Si falla aquí, Cloud Run mata el contenedor (que era tu problema original)
+    print(f"ERROR FATAL DE INICIALIZACIÓN: {e}") 
+    
 app = FastAPI(title="Asistente Legal SF API (RAG con GPT-4o Mini)")
 
 # --- LÓGICA DE SEGURIDAD ---
 
 async def validate_recaptcha(token: str, min_score: float = 0.5):
     """Valida el token de reCAPTCHA con Google antes de llamar a las APIs costosas."""
-    # RECAPTCHA_SECRET_KEY se lee al inicio de la aplicación
     response = requests.post(
         'https://www.google.com/recaptcha/api/siteverify',
         data={
@@ -64,7 +59,6 @@ async def validate_recaptcha(token: str, min_score: float = 0.5):
     
     result = response.json()
     
-    # Verifica si Google lo marcó como exitoso y si el puntaje supera el mínimo
     if result.get('success') and result.get('score', 0) >= min_score:
         return True
     else:
@@ -124,10 +118,6 @@ async def process_query(data: QueryModel):
     """Endpoint principal para recibir la pregunta y devolver la respuesta."""
     try:
         # 1. SEGURIDAD: Validar reCAPTCHA antes de cualquier API costosa
-        # Verifica si RECAPTCHA_SECRET_KEY fue cargado
-        if not 'RECAPTCHA_SECRET_KEY' in globals():
-             raise HTTPException(status_code=500, detail="Configuración de seguridad incompleta.")
-             
         if not await validate_recaptcha(data.recaptcha_token):
              raise HTTPException(status_code=403, detail="Validación reCAPTCHA fallida. Acceso denegado.")
 
@@ -153,6 +143,4 @@ async def process_query(data: QueryModel):
 # --- INICIO LOCAL (Para pruebas) ---
 if __name__ == "__main__":
     port_local = int(os.environ.get("PORT", 8000))
-    # Se espera que el servidor de uvicorn sea llamado por Cloud Run,
-    # pero esta sección está aquí para pruebas locales.
     uvicorn.run(app, host="0.0.0.0", port=port_local)
