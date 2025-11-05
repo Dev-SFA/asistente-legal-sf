@@ -1,5 +1,6 @@
-openai
-pinecone-client
 fastapi
 uvicorn
+openai
+pinecone 
 requests
+pydantic
