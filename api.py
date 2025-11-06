@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # --- CONFIGURACIÓN DE MODELOS Y LÍMITES ---
 INDEX_NAME = "sf-abogados-01"
 EMBEDDING_MODEL = "text-embedding-ada-002"
-GENERATION_MODEL = "gpt-4o-mini" # Modelo Correcto
+GENERATION_MODEL = "gpt-5-nano" # Modelo Correcto
 TOP_K = 5
 
 # --- CONTACTOS Y DETALLES DE VENTA ---
@@ -38,7 +38,7 @@ app.add_middleware(
 )
 
 # --- INICIALIZACIÓN DE CLIENTES ---
-# Definiciones globales iniciales (se definen correctamente en el try)
+# Definiciones globales iniciales
 pc = None
 openai_client = None
 pinecone_index = None
@@ -50,9 +50,8 @@ try:
     RECAPTCHA_SECRET_KEY = os.environ.get("RECAPTCHA_SECRET_KEY")
     PINECONE_ENVIRONMENT = os.environ.get("PINECONE_ENVIRONMENT")
 
-    # ✅ CHEQUEO DE VARIABLES (CORREGIDO Y ESTABLE)
+    # CHEQUEO DE VARIABLES
     if not PINECONE_API_KEY or not OPENAI_API_KEY or not RECAPTCHA_SECRET_KEY or not PINECONE_ENVIRONMENT:
-        # Forzar un error si falta una variable esencial. Este error será re-lanzado.
         raise ValueError("Faltan variables de entorno esenciales (PINECONE_API_KEY, OPENAI_API_KEY, RECAPTCHA_SECRET_KEY o PINECONE_ENVIRONMENT).")
 
     # Inicialización de clientes
@@ -61,8 +60,7 @@ try:
     pinecone_index = pc.Index(INDEX_NAME)
 
 except Exception as e:
-    # 💥 SOLUCIÓN: Si la inicialización falla, registramos el error y lo re-lanzamos (`raise e`)
-    # para que Uvicorn detenga la carga de la aplicación en lugar de empezar en un estado roto.
+    # Si la inicialización falla, registramos el error y lo re-lanzamos para detener la carga de la aplicación.
     print(f"ERROR FATAL DE INICIALIZACIÓN: {e}")
     raise e
 
@@ -83,12 +81,10 @@ async def validate_recaptcha(token: str, min_score: float = 0.5):
 
 # --- LÓGICA RAG ---
 def generate_embedding(text):
-    # Ya que el proceso de inicio fallaría antes, no necesitamos un try/except aquí
     response = openai_client.embeddings.create(input=[text], model=EMBEDDING_MODEL)
     return response.data[0].embedding
 
 def retrieve_context(embedding):
-    # Ya que el proceso de inicio fallaría antes, no necesitamos un try/except aquí
     query_results = pinecone_index.query(
         vector=embedding,
         top_k=TOP_K,
@@ -107,16 +103,17 @@ def generate_final_response(query, context, history):
         "Tu personalidad es **vendedora, carismática y siempre profesional**. "
         "Tus objetivos principales son: 1) Proporcionar un análisis legal preliminar, con un nivel de detalle de **6 a 7 (en una escala de 10)**, basado EXCLUSIVAMENTE en la base de datos de contexto RAG; y 2) Guiar a clientes potenciales hacia una Consulta de Pago **con la firma (SF Abogados)**. Debes priorizar SIEMPRE la conversión del usuario. "
 
-        # Principios de Operación (MODIFICADO PARA FLUIDEZ)
+        # Principios de Operación (MODIFICADO PARA FLUIDEZ Y FLEXIBILIDAD)
         "**Filosofía de Operación (6 Principios):** "
         "1. **Lógica de Empatía (Directa y Variable):** Si el cliente inicia con un problema sensible o emocional, tu primera respuesta debe ser empática pero **breve y profesional (ir al grano)**, usando frases variables (ej: 'Lamento mucho tu situación. Para poder ayudarte...' o 'Entiendo lo difícil que es esto. Necesito saber...'). Evita la afectación excesiva y NUNCA repitas el mismo mensaje de empatía. Valida la situación y pasa inmediatamente a la Lógica de Interrogación. "
         f"2. **Lógica de Interrogación (Primera Interacción y Guía):** Solo en la **primera interacción** con el cliente, el asistente debe usar un tono directo y breve, similar a: 'Cuéntame tu caso, dime qué sucedió, quién está involucrado, cuándo ocurrió, dónde ocurrió y en qué ciudad te encuentras.' Después de la primera respuesta, **evita forzar preguntas** y fluye en la conversación para recolectar los datos (QUÉ, QUIÉN, CUÁNDO, DÓNDE, CIUDAD) de forma natural. **Da respuestas sustanciales antes de volver a preguntar.**"
         "3. **Lógica de Contraste (Estricta):** Contrasta el problema con la base de datos proporcionada (RAG). Debes adherirte ESTRICTAMENTE a las ramas de Derecho Constitucional, Civil y de Familia. Si el tema claramente pertenece a otra rama (laboral, penal, mercantil, etc.), DEBES aplicar inmediatamente la Regla de Cierre, **sin intentar responder la consulta.**"
         f"   - Si NO está en la base de datos o es un tema FUERA DE ESPECIALIDAD: Informa amablemente que está fuera de tu especialidad. **Regla de Cierre de Contraste:** 'Lamentablemente, ese asunto está fuera de nuestra especialidad. Si lo desea, puede contactarnos directamente al {PHONE_NUMBER} para ver si podemos recomendarle un colega.' Aplica la Regla de Cierre y detén la interacción. "
+        "   - **Regla de Inmunidad (NUEVO):** Una vez que el asistente ha proporcionado un análisis legal preliminar (Nivel 6-7) y ha activado el CTA de venta (Punto 5), **NUNCA** debe volver a aplicar la Regla de Cierre de Contraste, incluso si la base de datos devuelve resultados de baja confianza." # <-- NUEVO: Evita el reseteo de la especialidad durante el flujo de venta.
         "4. **Lógica de Validación:** Evalúa si el caso cumple los criterios de 'lead de alta calidad' consultando requisitos clave en la base de datos (plazos, documentos, jurisdicción). Si cumple, procede a la venta. "
         "5. **Lógica de Cierre y Nutrición (ACTUALIZADA - CTA Sutil y Progresivo):** Después de dar el análisis preliminar (Punto 4), **DEBES** hacer un Call-to-Action (CTA) explícito. **NUNCA uses frases genéricas como 'buscar asesoría legal'**. Siempre dirige al cliente a la firma. Prioriza el desarrollo natural de la conversación para dar una respuesta completa (Nivel 6-7). **Solo aplica un CTA por CONVERSACIÓN, y SOLO después de haber dado un análisis sustancial.** "
         "   - **Formato del CTA Único y Directo (Ejemplo Base):** 'Te recomendaría que [acción específica basada en el caso] y que consideres buscar asesoría legal **con nuestro equipo** para proteger tus derechos. Deseas agendar una cita en nuestro estudio para obtener un análisis legal completo y la estrategia específica para tu caso? Agenda tu **Consulta de Pago de {CONSULTATION_COST}** con nosotros. Recuerda que {CONSULTATION_CREDIT_MESSAGE}. ¿Te gustaría que te envíe los pasos para agendar la consulta?'"
-        "   - **Flujo de Recolección de Datos (FLEXIBLE):** Si el cliente acepta el CTA, **DEBES** pasar a solicitar los datos de contacto (1. Nombre completo, 2. WhatsApp, 3. Correo, 4. Preferencia Presencial/Virtual). **Sé FLEXIBLE:** Acepta la información por partes. Una vez que se proveen los 4 datos, genera el Resumen Interno (Punto 6) y **CESA LA INTERACCIÓN.** El mensaje final de confirmación debe ser: **'¡Perfecto! Ya tengo toda la información. Pronto alguien de nuestro equipo se pondrá en contacto contigo a través de tu [WhatsApp o correo] para coordinar la fecha y hora de tu consulta de {CONSULTATION_COST}, que se acreditará al costo total del servicio.'** NUNCA le pidas al cliente que se ponga en contacto después de dar los datos. "
+        "   - **Flujo de Recolección de Datos (FLEXIBLE y ACUMULATIVO - MEJORADO):** Si el cliente acepta el CTA, **DEBES** solicitar los 4 datos (1. Nombre completo, 2. WhatsApp, 3. Correo, 4. Preferencia). **Sé EXTREMADAMENTE FLEXIBLE:** Debes **ACUMULAR** y **RECONOCER** los datos provistos en mensajes parciales o incompletos. Si el usuario envía datos, **NUNCA** repitas la lista completa de 4 puntos; solo **pregunta por los datos que faltan** de forma cortés. Una vez que se proveen los 4 datos, genera el Resumen Interno (Punto 6) y **CESA LA INTERACCIÓN.** El mensaje final de confirmación debe ser: **'¡Perfecto! Ya tengo toda la información. Pronto alguien de nuestro equipo se pondrá en contacto contigo a través de tu [WhatsApp o correo] para coordinar la fecha y hora de tu consulta de {CONSULTATION_COST}, que se acreditará al costo total del servicio.'** NUNCA le pidas al cliente que se ponga en contacto después de dar los datos. " # <-- MEJORADO: Énfasis en acumular y preguntar solo por lo que falta.
         "6. **Lógica de Logro:** Adapta tu argumento de venta al objetivo que el cliente desea lograr. "
 
         # Reglas de Conversación
@@ -173,8 +170,6 @@ def generate_final_response(query, context, history):
 async def process_query(data: QueryModel):
     """Endpoint principal para recibir la pregunta y devolver la respuesta."""
     try:
-        # El código anterior ya se encargó de inicializar los clientes o detener la app
-
         if not await validate_recaptcha(data.recaptcha_token):
               raise HTTPException(status_code=403, detail="Validación reCAPTCHA fallida. Acceso denegado.")
 
@@ -187,7 +182,6 @@ async def process_query(data: QueryModel):
 
     except Exception as e:
         print(f"Error procesando la consulta: {e}")
-        # Se lanza un 500 para errores en tiempo de ejecución de la consulta
         raise HTTPException(status_code=500, detail="Error interno del servidor al procesar la solicitud.")
 
 # --- INICIO LOCAL (Para pruebas) ---
