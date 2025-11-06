@@ -7,10 +7,10 @@ from pinecone import Pinecone
 from openai import OpenAI
 from fastapi.middleware.cors import CORSMiddleware 
 
-# --- CONFIGURACIÓN DE MODELOS Y LÍMITES ---
+# --- CONFIGURACIÓN DE MODELOS Y LÍMITES (CORREGIDO) ---
 INDEX_NAME = "sf-abogados-01" 
 EMBEDDING_MODEL = "text-embedding-ada-002"
-GENERATION_MODEL = "gpt-5-nano"
+GENERATION_MODEL = "gpt-4o-mini" # <<-- CORRECCIÓN CLAVE: Usamos el modelo GPT-4o Mini
 TOP_K = 5  
 
 # --- MODELO DE DATOS DE ENTRADA (Incluye reCAPTCHA) ---
@@ -67,7 +67,7 @@ except Exception as e:
 async def validate_recaptcha(token: str, min_score: float = 0.5):
     """Valida el token de reCAPTCHA con Google antes de llamar a las APIs costosas."""
     
-    # 🚨 CORRECCIÓN FINAL: Si se usa el token de prueba, IGNORAMOS la validación.
+    # CORRECCIÓN FINAL: Si se usa el token de prueba, IGNORAMOS la validación.
     if token == 'EsteEsUnTokenDePruebaTemporal':
          print("WARNING: reCAPTCHA bypassed using placeholder token.")
          return True # Permite que la solicitud continúe
@@ -90,7 +90,6 @@ async def validate_recaptcha(token: str, min_score: float = 0.5):
         return False
 
 # --- LÓGICA RAG ---
-# (El resto de estas funciones se mantiene igual)
 def generate_embedding(text):
     """Genera el embedding para un texto dado."""
     response = openai_client.embeddings.create(
@@ -162,8 +161,6 @@ async def process_query(data: QueryModel):
         return {"answer": final_answer}
 
     except Exception as e:
-        # Captura cualquier otro error, lo imprime en los logs, y devuelve el 500.
-        # Con esta corrección, el Error 500 ya no debería ocurrir.
         print(f"Error procesando la consulta: {e}") 
         raise HTTPException(status_code=500, detail="Error interno del servidor al procesar la solicitud.")
 
