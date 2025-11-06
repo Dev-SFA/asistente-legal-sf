@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # --- CONFIGURACIÓN DE MODELOS Y LÍMITES ---
 INDEX_NAME = "sf-abogados-01"
 EMBEDDING_MODEL = "text-embedding-ada-002"
-GENERATION_MODEL = "gpt-5-nano" # Modelo Correcto
+GENERATION_MODEL = "gpt-4o-mini" # Modelo Correcto
 TOP_K = 5
 
 # --- CONTACTOS Y DETALLES DE VENTA ---
