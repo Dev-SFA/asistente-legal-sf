@@ -3,8 +3,10 @@ import uvicorn
 import requests
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from pinecone import Pinecone # Ahora solo se instala 'pinecone' (paquete correcto)
+from pinecone import Pinecone 
 from openai import OpenAI
+# Importación necesaria para manejar CORS:
+from fastapi.middleware.cors import CORSMiddleware 
 
 # --- CONFIGURACIÓN DE MODELOS Y LÍMITES ---
 INDEX_NAME = "sf-abogados-01" 
@@ -16,7 +18,29 @@ TOP_K = 5
 class QueryModel(BaseModel):
     """Define la estructura de la solicitud JSON que recibirá el API."""
     question: str
-    recaptcha_token: str # Token de seguridad enviado por el frontend
+    recaptcha_token: str 
+
+# --- INICIALIZACIÓN DE FASTAPI Y CORS ---
+
+app = FastAPI(title="Asistente Legal SF API (RAG con GPT-4o Mini)")
+
+# 🔒 CONFIGURACIÓN DE CORS PARA PERMITIR LLAMADAS DESDE HOSTRINGER
+origins = [
+    "https://abogados-sf.com",  # ¡TU DOMINIO AUTORIZADO!
+    "http://localhost",         # Para pruebas locales
+    "http://localhost:8000",    # Para pruebas locales
+    "http://localhost:8080",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"], 
+    allow_headers=["*"], 
+)
+# --- FIN CONFIGURACIÓN DE CORS ---
+
 
 # --- INICIALIZACIÓN DE CLIENTES ---
 try:
@@ -27,12 +51,12 @@ try:
     PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
     RECAPTCHA_SECRET_KEY = os.environ.get("RECAPTCHA_SECRET_KEY")
-    PINECONE_ENVIRONMENT = os.environ.get("PINECONE_ENVIRONMENT") # Se lee el ambiente
+    PINECONE_ENVIRONMENT = os.environ.get("PINECONE_ENVIRONMENT")
 
     if not PINECONE_API_KEY or not OPENAI_API_KEY or not RECAPTCHA_SECRET_KEY or not PINECONE_ENVIRONMENT:
         raise ValueError("Faltan variables de entorno esenciales (API Keys, Ambiente Pinecone o Secreto reCAPTCHA).")
 
-    # ¡CORRECCIÓN APLICADA! Ahora se pasa el environment
+    # Inicialización de Pinecone con la clave y el ambiente
     pc = Pinecone(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT) 
     openai_client = OpenAI(api_key=OPENAI_API_KEY)
     
@@ -40,15 +64,15 @@ try:
     pinecone_index = pc.Index(INDEX_NAME)
     
 except Exception as e:
-    # Si falla aquí, Cloud Run mata el contenedor (que era tu problema original)
+    # Si falla aquí, Cloud Run mata el contenedor 
     print(f"ERROR FATAL DE INICIALIZACIÓN: {e}") 
     
-app = FastAPI(title="Asistente Legal SF API (RAG con GPT-4o Mini)")
 
 # --- LÓGICA DE SEGURIDAD ---
 
 async def validate_recaptcha(token: str, min_score: float = 0.5):
     """Valida el token de reCAPTCHA con Google antes de llamar a las APIs costosas."""
+    # Usar el secreto de la variable de entorno
     response = requests.post(
         'https://www.google.com/recaptcha/api/siteverify',
         data={
@@ -119,6 +143,7 @@ async def process_query(data: QueryModel):
     try:
         # 1. SEGURIDAD: Validar reCAPTCHA antes de cualquier API costosa
         if not await validate_recaptcha(data.recaptcha_token):
+             # 403 Forbidden para acceso denegado
              raise HTTPException(status_code=403, detail="Validación reCAPTCHA fallida. Acceso denegado.")
 
         # 2. Generar embedding de la pregunta
