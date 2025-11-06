@@ -45,7 +45,8 @@ try:
     RECAPTCHA_SECRET_KEY = os.environ.get("RECAPTCHA_SECRET_KEY")
     PINECONE_ENVIRONMENT = os.environ.get("PINECONE_ENVIRONMENT")
 
-    if not PINECONE_API_KEY or not OPENAI_API_KEY or not RECAPTCHA_SECRET_KEY or not PINECAPTCHA_ENVIRONMENT:
+    # ✅ CORRECCIÓN: Se cambió PINECAPTCHA_ENVIRONMENT por PINECONE_ENVIRONMENT
+    if not PINECONE_API_KEY or not OPENAI_API_KEY or not RECAPTCHA_SECRET_KEY or not PINECONE_ENVIRONMENT:
         raise ValueError("Faltan variables de entorno esenciales.")
 
     pc = Pinecone(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT) 
@@ -88,12 +89,6 @@ def generate_final_response(query, context, history):
     Genera la respuesta final utilizando el contexto, la memoria (history) 
     y el Super Prompt final.
     """
-    # Determinar si es la primera pregunta del usuario (después del saludo inicial)
-    is_first_user_message = len(history) == 0 or (len(history) == 1 and history[0]['role'] == 'assistant')
-    # Contar cuántas veces se ha aplicado el CTA
-    cta_applied_count = sum(1 for msg in history if "Consulta de Pago de" in msg['content'])
-
-
     # --- SUPER PROMPT COMPLETO (FINAL y CORRECTO) ---
     system_prompt = (
         "Eres Agorito, un Asistente Legal Virtual, experto en Derecho Constitucional, Civil y de Familia de la ley Ecuatoriana. "
