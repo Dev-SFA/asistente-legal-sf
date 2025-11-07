@@ -1,6 +1,10 @@
 import os
 import uvicorn
 import requests
+import json 
+import smtplib # Librería estándar de Python para SMTP
+from email.mime.text import MIMEText # Para construir el correo
+from email.header import Header
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from pinecone import Pinecone
@@ -15,7 +19,7 @@ TOP_K = 5
 
 # --- CONTACTOS Y DETALLES DE VENTA ---
 PHONE_NUMBER = "+593 98 375 6678"
-SALES_EMAIL = "leads@abogados-sf.com"
+SALES_EMAIL = "leads@abogados-sf.com" # Destinatario de los resúmenes (y Remitente SMTP)
 CONSULTATION_COST = "40 USD"
 CONSULTATION_CREDIT_MESSAGE = f"Recuerda que este monto, en caso de que llevemos contigo el caso, **se acredita al costo total del servicio como descuento**."
 
@@ -49,10 +53,27 @@ try:
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
     RECAPTCHA_SECRET_KEY = os.environ.get("RECAPTCHA_SECRET_KEY")
     PINECONE_ENVIRONMENT = os.environ.get("PINECONE_ENVIRONMENT")
+    
+    # NUEVAS VARIABLES DE ENTORNO REQUERIDAS PARA SMTP
+    SMTP_SERVER = os.environ.get("SMTP_SERVER")
+    SMTP_PORT = os.environ.get("SMTP_PORT")
+    SMTP_USERNAME = os.environ.get("SMTP_USERNAME")
+    SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD")
 
     # CHEQUEO DE VARIABLES
-    if not PINECONE_API_KEY or not OPENAI_API_KEY or not RECAPTCHA_SECRET_KEY or not PINECONE_ENVIRONMENT:
-        raise ValueError("Faltan variables de entorno esenciales (PINECONE_API_KEY, OPENAI_API_KEY, RECAPTCHA_SECRET_KEY o PINECONE_ENVIRONMENT).")
+    missing_vars = []
+    if not PINECONE_API_KEY: missing_vars.append("PINECONE_API_KEY")
+    if not OPENAI_API_KEY: missing_vars.append("OPENAI_API_KEY")
+    if not RECAPTCHA_SECRET_KEY: missing_vars.append("RECAPTCHA_SECRET_KEY")
+    if not PINECONE_ENVIRONMENT: missing_vars.append("PINECONE_ENVIRONMENT")
+    # CHEQUEO de variables de SMTP (CRUCIAL)
+    if not SMTP_SERVER: missing_vars.append("SMTP_SERVER")
+    if not SMTP_PORT: missing_vars.append("SMTP_PORT")
+    if not SMTP_USERNAME: missing_vars.append("SMTP_USERNAME")
+    if not SMTP_PASSWORD: missing_vars.append("SMTP_PASSWORD")
+
+    if missing_vars:
+        raise ValueError(f"Faltan variables de entorno esenciales: {', '.join(missing_vars)}")
 
     # Inicialización de clientes
     pc = Pinecone(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
@@ -63,6 +84,60 @@ except Exception as e:
     # Si la inicialización falla, registramos el error y lo re-lanzamos para detener la carga de la aplicación.
     print(f"ERROR FATAL DE INICIALIZACIÓN: {e}")
     raise e
+
+
+# --- LÓGICA DE ENVÍO DE EMAIL (VÍA SMTP) ---
+
+def send_summary_email(subject: str, body: str, recipient: str = SALES_EMAIL):
+    """
+    Función para enviar el resumen interno por correo electrónico usando la configuración SMTP.
+    """
+    if not all([SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD]):
+        print("ERROR DE CONFIGURACIÓN: Variables SMTP no definidas. Email de resumen no enviado.")
+        return False
+        
+    # Intentamos extraer el Subject y el Body del texto generado por el LLM
+    try:
+        # El LLM genera: Subject: [New Prospect - Legal Advice] Body: ...
+        subject_line = subject.split("Subject:")[1].strip()
+        body_content = body.split("Body:")[1].strip()
+    except IndexError:
+        print("ERROR DE PARSEO DE EMAIL: El LLM no generó el Subject o Body correctamente. Se usa el contenido crudo.")
+        subject_line = "Alerta: Resumen de Lead con Error de Formato"
+        body_content = subject # Usamos el contenido crudo si falla el parseo
+
+    # Construir el mensaje de correo
+    msg = MIMEText(body_content, 'plain', 'utf-8')
+    msg['Subject'] = Header(subject_line, 'utf-8')
+    msg['From'] = f"Agorito - Asistente Legal <{SMTP_USERNAME}>"
+    msg['To'] = recipient
+
+    try:
+        # 465 (SSL/TLS) es el puerto más común y seguro
+        if SMTP_PORT == "465":
+            server = smtplib.SMTP_SSL(SMTP_SERVER, int(SMTP_PORT))
+        # 587 (STARTTLS) es la otra opción común (Configuración de Hostinger)
+        elif SMTP_PORT == "587": 
+            server = smtplib.SMTP(SMTP_SERVER, int(SMTP_PORT))
+            server.starttls() 
+        else:
+             print(f"ERROR: Puerto SMTP {SMTP_PORT} no soportado o incorrecto.")
+             return False
+
+        server.login(SMTP_USERNAME, SMTP_PASSWORD)
+        server.sendmail(SMTP_USERNAME, recipient, msg.as_string())
+        server.quit()
+        
+        print(f"ÉXITO: Email de resumen enviado a {recipient} a través de SMTP.")
+        return True
+        
+    except smtplib.SMTPAuthenticationError:
+        print("ERROR SMTP: Autenticación fallida. Revisa el usuario y contraseña del SMTP.")
+        return False
+    except Exception as e:
+        print(f"ERROR SMTP: Fallo al enviar email por SMTP. Detalle: {e}")
+        return False
+
 
 # --- LÓGICA DE SEGURIDAD ---
 async def validate_recaptcha(token: str, min_score: float = 0.5):
@@ -106,7 +181,7 @@ def generate_final_response(query, context, history):
         # Principios de Operación
         "**Filosofía de Operación (6 Principios):** "
         "1. **Lógica de Empatía (Controlada y Profesional):** Si el cliente inicia con un problema sensible o emocional, tu primera respuesta debe ser empática pero **breve y profesional (ir al grano)**, usando frases variables (ej: 'Lamento mucho tu situación. Para poder ayudarte...' o 'Entiendo lo difícil que es esto. Necesito saber...'). **Después del primer mensaje**, cambia el enfoque a un tono más profesional, directo y orientado a la acción/análisis. **Evita la afectación o compasión excesiva** (ej: NUNCA uses 'Lamento mucho tu situación' más de una vez). Valida la situación y pasa inmediatamente a la Lógica de Interrogación o Análisis. "
-        # CAMBIO CLAVE: Aviso Legal explícito integrado en la primera interacción.
+        # Aviso Legal explícito integrado en la primera interacción.
         f"2. **Lógica de Interrogación (Primera Interacción y Guía):** Solo en la **primera interacción** con el cliente (y nunca después), el asistente debe responder **ÚNICAMENTE** con el siguiente mensaje explícito de bienvenida y recopilación de datos: '¡Hola! Soy Agorito, tu asistente legal virtual experto en derecho Ecuatoriano. Al usar este chat estás aceptando nuestros términos y condiciones de uso, así como las políticas de privacidad y datos (www.abogados-sf.com/politicas). Para empezar con un análisis preliminar de tu caso, necesito esta información clave: ¿**QUÉ** te sucedió, **QUIÉN** está involucrado, **CUÁNDO** ocurrió, **DÓNDE** fue y cuál es tu **CIUDAD/UBICACIÓN** actual?' Después de la primera respuesta, **evita forzar preguntas** y fluye en la conversación para recolectar los datos (QUÉ, QUIÉN, CUÁNDO, DÓNDE, CIUDAD) de forma natural. **Da respuestas sustanciales antes de volver a preguntar.**"
         "3. **Lógica de Contraste (Estricta):** Contrasta el problema con la base de datos proporcionada (RAG). Debes adherirte ESTRICTAMENTE a las ramas de Derecho Constitucional, Civil y de Familia. Si el tema claramente pertenece a otra rama (laboral, penal, mercantil, etc.), DEBES aplicar inmediatamente la Regla de Cierre, **sin intentar responder la consulta.**"
         f"   - Si NO está en la base de datos o es un tema FUERA DE ESPECIALIDAD: Informa amablemente que está fuera de tu especialidad. **Regla de Cierre de Contraste:** 'Lamentablemente, ese asunto está fuera de nuestra especialidad. Si lo desea, puede contactarnos directamente al {PHONE_NUMBER} para ver si podemos recomendarle un colega.' Aplica la Regla de Cierre y detén la interacción. "
@@ -114,7 +189,7 @@ def generate_final_response(query, context, history):
         "4. **Lógica de Validación:** Evalúa si el caso cumple los criterios de 'lead de alta calidad' consultando requisitos clave en la base de datos (plazos, documentos, jurisdicción). Si cumple, procede a la venta. "
         "5. **Lógica de Cierre y Nutrición (ACTUALIZADA - CTA Sutil y Progresivo):** Después de dar el análisis preliminar (Punto 4), **DEBES** hacer un Call-to-Action (CTA) explícito. **NUNCA uses frases genéricas como 'buscar asesoría legal'**. Siempre dirige al cliente a la firma. Prioriza el desarrollo natural de la conversación para dar una respuesta completa (Nivel 6-7). **Solo aplica un CTA por CONVERSACIÓN, y SOLO después de haber dado un análisis sustancial.** "
         "   - **Formato del CTA Único y Directo (Ejemplo Base):** 'Te recomendaría que [acción específica basada en el caso] y que consideres buscar asesoría legal **con nuestro equipo** para proteger tus derechos. Deseas agendar una cita en nuestro estudio para obtener un análisis legal completo y la estrategia específica para tu caso? Agenda tu **Consulta de Pago de {CONSULTATION_COST}** con nosotros. Recuerda que {CONSULTATION_CREDIT_MESSAGE}. ¿Te gustaría que te envíe los pasos para agendar la consulta?'"
-        "   - **Flujo de Recolección de Datos (FLEXIBLE y ACUMULATIVO - OPTIMIZADO):** Si el cliente acepta el CTA, **DEBES** solicitar los 4 datos (1. Nombre completo, 2. WhatsApp, 3. Correo, 4. Preferencia). **Sé EXTREMADAMENTE FLEXIBLE:** Debes **ACUMULAR** y **RECONOCER** los datos provistos. Si el usuario envía datos, **NUNCA** repitas la lista completa de 4 puntos; solo **pregunta por los datos que faltan**. Una vez que se proveen los 4 datos, debes realizar DOS ACCIONES SIMULTÁNEAS: 1) Generar el Resumen Interno (Punto 6) y 2) **ENVIAR ÚNICAMENTE** el mensaje final de confirmación al usuario. **PROHIBIDO: No incluyas el Resumen Interno en la respuesta final al usuario ni repitas información.** El mensaje final de confirmación DEBE SER EXCLUSIVAMENTE: **'¡Perfecto! Ya tengo toda la información. Pronto alguien de nuestro equipo se pondrá en contacto contigo a través de tu [WhatsApp o correo] para coordinar la fecha y hora de tu consulta de {CONSULTATION_COST}, que se acreditará al costo total del servicio.'**"
+        "   - **Flujo de Recolección de Datos (FLEXIBLE y ACUMULATIVO - OPTIMIZADO):** Si el cliente acepta el CTA, **DEBES** solicitar los 4 datos (1. Nombre completo, 2. WhatsApp, 3. Correo, 4. Preferencia). **Sé EXTREMADAMENTE FLEXIBLE:** Debes **ACUMULAR** y **RECONOCER** los datos provistos. Si el usuario envía datos, **NUNCA** repitas la lista completa de 4 puntos; solo **pregunta por los datos que faltan**. Una vez que se proveen los 4 datos, debes realizar DOS ACCIONES SIMULTÁNEAS: 1) Generar el Resumen Interno (Punto 6) **ENVUELTO en las etiquetas [INTERNAL_SUMMARY_START]...[INTERNAL_SUMMARY_END]** y 2) **ENVIAR ÚNICAMENTE** el mensaje final de confirmación al usuario (quitando las etiquetas de resumen). **PROHIBIDO: No incluyas el Resumen Interno en la respuesta final al usuario ni repitas información.** El mensaje final de confirmación DEBE SER EXCLUSIVAMENTE: **'¡Perfecto! Ya tengo toda la información. Pronto alguien de nuestro equipo se pondrá en contacto contigo a través de tu [WhatsApp o correo] para coordinar la fecha y hora de tu consulta de {CONSULTATION_COST}, que se acreditará al costo total del servicio.'**"
         "6. **Lógica de Logro:** Adapta tu argumento de venta al objetivo que el cliente desea lograr. "
 
         # Reglas de Conversación
@@ -178,9 +253,34 @@ async def process_query(data: QueryModel):
         query_embedding = generate_embedding(data.question)
         query_results = retrieve_context(query_embedding)
 
-        final_answer = generate_final_response(data.question, query_results, data.history)
+        # 1. Generar la respuesta (que incluye el resumen interno y el mensaje al usuario)
+        raw_llm_response = generate_final_response(data.question, query_results, data.history)
 
-        return {"answer": final_answer}
+        # 2. Lógica para DETECTAR y ENVIAR el resumen
+        summary_start_tag = "[INTERNAL_SUMMARY_START]"
+        summary_end_tag = "[INTERNAL_SUMMARY_END]"
+        
+        # Verificar si hay un resumen interno para enviar
+        if summary_start_tag in raw_llm_response and summary_end_tag in raw_llm_response:
+            try:
+                # Extraer el contenido del resumen
+                summary_content = raw_llm_response.split(summary_start_tag)[1].split(summary_end_tag)[0].strip()
+                
+                # Intentar enviar el correo
+                send_summary_email(summary_content, summary_content)
+                
+                # 3. Limpiar la respuesta para el usuario (eliminar el resumen y las etiquetas)
+                # La respuesta final al usuario es el mensaje de confirmación
+                user_response = raw_llm_response.replace(summary_start_tag + summary_content + summary_end_tag, "").strip()
+            except Exception as e:
+                # Si falla el parseo o el envío, se registra el error y se envía la respuesta cruda (o se limpia solo las etiquetas)
+                print(f"Advertencia: Fallo en el procesamiento del resumen interno. {e}")
+                user_response = raw_llm_response.replace(summary_start_tag, "").replace(summary_end_tag, "").strip()
+        else:
+            # Si no hay etiquetas, la respuesta va directamente al usuario
+            user_response = raw_llm_response
+
+        return {"answer": user_response}
 
     except Exception as e:
         print(f"Error procesando la consulta: {e}")
