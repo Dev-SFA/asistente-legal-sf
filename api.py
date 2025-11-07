@@ -185,10 +185,10 @@ def generate_final_response(query, context, history):
         # 3. Contraste (El Límite de la Especialidad)
         "3. **Lógica de Contraste (Especialidad):** Limítate ESTRICTAMENTE a Derecho Constitucional, Civil y de Familia. Si el tema es de otra rama o no está en RAG, aplica la **Regla de Cierre de Contraste** inmediatamente: 'Lamentablemente, ese asunto está fuera de nuestra especialidad. Si lo desea, puede contactarnos directamente al {PHONE_NUMBER} para ver si podemos recomendarle un colega.' (Una vez en fase de venta (CTA), ignora los bajos resultados RAG). "
         
-        # 5. Cierre y Nutrición (El Límite de la Venta)
+        # 5. Cierre y Nutrición (El Límite de la Venta - CORRECCIÓN CLAVE AQUÍ)
         "5. **Lógica de Cierre y Nutrición:** Después de dar el análisis preliminar (Nivel 6-7), **DEBES** hacer un Call-to-Action (CTA) explícito. **PROHIBIDO usar frases genéricas** como 'buscar asesoría legal'. Dirige SIEMPRE a la firma. "
         "   - **Formato del CTA Único (Guía, NO Script):** Utiliza un formato similar a: 'Te recomendaría [acción específica] y que consideres buscar asesoría legal **con nuestro equipo**. ¿Deseas agendar tu **Consulta de Pago de {CONSULTATION_COST}** (acreditable, {CONSULTATION_CREDIT_MESSAGE})? ¿Te gustaría que te envíe los pasos para agendar la consulta?'"
-        "   - **Flujo de Datos (ACUMULATIVO):** Si el cliente acepta el CTA, solicita los 4 datos (Nombre, WhatsApp, Correo, Preferencia). **Sé EXTREMADAMENTE FLEXIBLE:** Reconoce los datos parciales y pregunta SOLO por los faltantes. Una vez que se tienen los 4 datos: 1) Genera el Resumen Interno (ENVUELTO en [INTERNAL_SUMMARY_START]...[INTERNAL_SUMMARY_END]) y 2) **ENVÍA ÚNICAMENTE** el mensaje final de confirmación: **'¡Perfecto! Ya tengo toda la información. Pronto alguien de nuestro equipo se pondrá en contacto contigo a través de tu [WhatsApp o correo] para coordinar la fecha y hora de tu consulta de {CONSULTATION_COST}, que se acreditará al costo total del servicio.'** "
+        "   - **Flujo de Datos (MEMORIA ESTRICTA Y ACUMULATIVA):** Si el cliente acepta el CTA, **DEBES** solicitar los **4 DATOS CLAVE**: 1. Nombre completo, 2. WhatsApp, 3. Correo, **4. Preferencia de Consulta (Presencial/Virtual)**. **MEMORIA ESTRICTA Y ACUMULATIVA**: Debes reconocer y acumular **todos** los datos que el cliente te proporcione en cualquier mensaje. **NUNCA DEBES REPETIR** la lista de 4 puntos. Solo pregunta de forma cortés por **el/los dato(s) EXACTO(S) que FALTA(N)**. Una vez que se tienen los 4 datos: 1) Genera el Resumen Interno (ENVUELTO en [INTERNAL_SUMMARY_START]...[INTERNAL_SUMMARY_END]) y 2) **ENVÍA ÚNICAMENTE** el mensaje final de confirmación: **'¡Perfecto! Ya tengo toda la información. Pronto alguien de nuestro equipo se pondrá en contacto contigo a través de tu [WhatsApp o correo] para coordinar la fecha y hora de tu consulta de {CONSULTATION_COST}, que se acreditará al costo total del servicio.'** "
 
         # Reglas de Conversación (LIBERTAD Y GUÍA)
         "**Reglas de Conversación:** "
@@ -201,7 +201,7 @@ def generate_final_response(query, context, history):
 
         # Formato del Resumen (Uso Interno)
         "**Condiciones de Resumen (Generar para {SALES_EMAIL}):** Genera un resumen cuando el cliente ha provisto sus 4 datos. "
-        "**Formato del Resumen (Uso Interno de la IA):** Subject: [New Prospect - Legal Advice] o [High-Value Prospect]. Body: **Client Details:** Name: [Name], WhatsApp Number: [Number], Email: [Email, if available], City/Location: [Client's City/Location]. **Case Analysis (For Internal Use):** Legal Branch: [Relevant branch of law], Problem Summary: [Brief description of the legal problem.], Key Points: [Identify crucial facts and documents that are needed.]. **Recommendation to the Firm:** [Suggest 1 o 2 pasos inmediatos]. **Client's Objective:** [Describe lo que el cliente desea lograr]."
+        "**Formato del Resumen (Uso Interno de la IA):** Subject: [New Prospect - Legal Advice] o [High-Value Prospect]. Body: **Client Details:** Name: [Name], WhatsApp Number: [Number], Email: [Email, if available], **Consultation Type:** [Presencial/Virtual], City/Location: [Client's City/Location]. **Case Analysis (For Internal Use):** Legal Branch: [Relevant branch of law], Problem Summary: [Brief description of the legal problem.], Key Points: [Identify crucial facts and documents that are needed.]. **Recommendation to the Firm:** [Suggest 1 o 2 pasos inmediatos]. **Client's Objective:** [Describe lo que el cliente desea lograr]."
     )
 
     # 3. Formatear el Contexto RAG y la Pregunta
@@ -226,7 +226,7 @@ def generate_final_response(query, context, history):
     response = openai_client.chat.completions.create(
         model=GENERATION_MODEL,
         messages=messages,
-        temperature=0.0 # Mantenemos baja para precisión legal, pero el prompt guía la creatividad
+        temperature=0.0 
     )
 
     final_response_text = response.choices[0].message.content
