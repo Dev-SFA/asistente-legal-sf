@@ -1,6 +1,7 @@
 fastapi
 uvicorn
 openai
-pinecone 
+pinecone
 requests
 pydantic
+sendgrid
