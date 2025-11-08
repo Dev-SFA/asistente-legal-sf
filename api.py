@@ -2,7 +2,6 @@ import os
 import uvicorn
 import requests
 import json 
-# Se eliminaron: smtplib, email.mime.text, email.header
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from pinecone import Pinecone
@@ -65,7 +64,6 @@ try:
     if not OPENAI_API_KEY: missing_vars.append("OPENAI_API_KEY")
     if not RECAPTCHA_SECRET_KEY: missing_vars.append("RECAPTCHA_SECRET_KEY")
     if not PINECONE_ENVIRONMENT: missing_vars.append("PINECONE_ENVIRONMENT")
-    # Se elimina el chequeo de las variables SMTP (ya no se usan)
     if not SENDGRID_API_KEY: missing_vars.append("SENDGRID_API_KEY") # Chequeo de la nueva clave API
 
     if missing_vars:
@@ -123,12 +121,11 @@ def send_summary_email(subject: str, body: str, recipient: str = SALES_EMAIL):
 
     try:
         # 2. Crear el objeto Mail
-        # El from_email es SALES_EMAIL (leads@abogados-sf.com), verificado en SendGrid
         message = Mail(
             from_email=SALES_EMAIL,              
             to_emails=recipient,                 
             subject=subject_line,
-            plain_text_content=body_content      # Envío como texto plano
+            plain_text_content=body_content      
         )
         
         # 3. Conectar y enviar (la API usa HTTPS/443, no el puerto SMTP)
@@ -178,9 +175,9 @@ def retrieve_context(embedding):
 def generate_final_response(query, context, history):
     """
     Genera la respuesta final utilizando el contexto, la memoria (history)
-    y el Super Prompt final. (Sin cambios)
+    y el Super Prompt final.
     """
-    # --- SUPER PROMPT COMPLETO (BALANCEADO ENTRE LIBERTAD Y LÍMITES) ---
+    # --- SUPER PROMPT COMPLETO (CON CORRECCIONES) ---
     system_prompt = (
         "Eres Agorito, un Asistente Legal Virtual, experto en Derecho Constitucional, Civil y de Familia de la ley Ecuatoriana. "
         "Tu personalidad es **vendedora, carismática y siempre profesional**. "
@@ -201,7 +198,7 @@ def generate_final_response(query, context, history):
         # 5. Cierre y Nutrición (El Límite de la Venta - CORRECCIÓN CLAVE AQUÍ)
         "5. **Lógica de Cierre y Nutrición:** Después de dar el análisis preliminar (Nivel 6-7), **DEBES** hacer un Call-to-Action (CTA) explícito. **PROHIBIDO usar frases genéricas** como 'buscar asesoría legal'. Dirige SIEMPRE a la firma. "
         "   - **Formato del CTA Único (Guía, NO Script):** Utiliza un formato similar a: 'Te recomendaría [acción específica] y que consideres buscar asesoría legal **con nuestro equipo**. ¿Deseas agendar tu **Consulta de Pago de {CONSULTATION_COST}** (acreditable, {CONSULTATION_CREDIT_MESSAGE})? ¿Te gustaría que te envíe los pasos para agendar la consulta?'"
-        "   - **Flujo de Datos (MEMORIA ESTRICTA Y ACUMULATIVA):** Si el cliente acepta el CTA, **DEBES** solicitar los **4 DATOS CLAVE**: 1. Nombre completo, 2. WhatsApp, 3. Correo, **4. Preferencia de Consulta (Presencial/Virtual)**. **MEMORIA ESTRICTA Y ACUMULATIVA**: Debes reconocer y acumular **todos** los datos que el cliente te proporcione en cualquier mensaje. **NUNCA DEBES REPETIR** la lista de 4 puntos. Solo pregunta de forma cortés por **el/los dato(s) EXACTO(S) que FALTA(N)**. Una vez que se tienen los 4 datos: 1) Genera el Resumen Interno (ENVUELTO en [INTERNAL_SUMMARY_START]...[INTERNAL_SUMMARY_END]) y 2) **ENVÍA ÚNICAMENTE** el mensaje final de confirmación: **'¡Perfecto! Ya tengo toda la información. Pronto alguien de nuestro equipo se pondrá en contacto contigo a través de tu [WhatsApp o correo] para coordinar la fecha y hora de tu consulta de {CONSULTATION_COST}, que se acreditará al costo total del servicio.'** "
+        "   - **Flujo de Datos (MEMORIA ESTRICTA Y ACUMULATIVA - REFORZADA):** Si el cliente acepta el CTA, **DEBES** solicitar los **4 DATOS CLAVE**: 1. Nombre completo, 2. WhatsApp, 3. Correo, **4. Preferencia de Consulta (Presencial/Virtual)**. **PROHIBIDO** solicitar fecha/hora o dirección exacta. **MEMORIA ESTRICTA Y ACUMULATIVA REFORZADA**: Debes reconocer y acumular **todos** los datos que el cliente te proporcione en cualquier mensaje, **INCLUYENDO CUALQUIER DATO PROVISTO EN MENSAJES ANTERIORES DONDE EL ASISTENTE FALLÓ**. **NUNCA DEBES REPETIR** la lista de 4 puntos. Solo pregunta de forma cortés por **el/los dato(s) EXACTO(S) que FALTA(N)**. Una vez que se tienen los 4 datos: 1) Genera el Resumen Interno (ENVUELTO en [INTERNAL_SUMMARY_START]...[INTERNAL_SUMMARY_END]) y 2) **ENVÍA ÚNICAMENTE** el mensaje final de confirmación: **'¡Perfecto! Ya tengo toda la información. Pronto alguien de nuestro equipo se pondrá en contacto contigo a través de tu [WhatsApp o correo] para coordinar la fecha y hora de tu consulta de {CONSULTATION_COST}, que se acreditará al costo total del servicio.'** "
 
         # Reglas de Conversación (LIBERTAD Y GUÍA)
         "**Reglas de Conversación:** "
@@ -210,7 +207,7 @@ def generate_final_response(query, context, history):
         " - **PROHIBICIÓN CLAVE:** NO alucinar o inventar datos. Sé honesto si el contexto RAG es débil. "
         f" - **Meta de Venta:** El objetivo es la consulta de {CONSULTATION_COST} (acreditable). "
         f" - **Cese de Interacción:** **CESA INMEDIATAMENTE TODA INTERACCIÓN** después de enviar el mensaje final de confirmación de datos."
-        f" - **Transferencia a Humano:** Si el cliente se frustra o el caso es complejo: 'Entiendo su preocupación. Este caso requiere la atención de uno de nuestros abogados. Por favor, contáctenos directamente al {PHONE_NUMBER} o envíe un correo a {SALES_EMAIL}.' "
+        f" - **Transferencia a Humano (BLINDADA):** Si el cliente se frustra por la respuesta o el caso es objetivamente complejo o el LLM no tiene contexto RAG, aplica: 'Entiendo su preocupación. Este caso requiere la atención de uno de nuestros abogados. Por favor, contáctenos directamente al {PHONE_NUMBER} o envíe un correo a {SALES_EMAIL}.' **ESTA REGLA ESTÁ PROHIBIDA EN SU TOTALIDAD SI EL CLIENTE YA HA DICHO 'SÍ' A LA CONSULTA O ESTÁ EN PROCESO DE ENTREGA DE DATOS.**"
 
         # Formato del Resumen (Uso Interno)
         "**Condiciones de Resumen (Generar para {SALES_EMAIL}):** Genera un resumen cuando el cliente ha provisto sus 4 datos. "
@@ -272,7 +269,6 @@ async def process_query(data: QueryModel):
                 summary_content = raw_llm_response.split(summary_start_tag)[1].split(summary_end_tag)[0].strip()
                 
                 # Intentar enviar el correo (USA LA NUEVA FUNCIÓN DE SENDGRID)
-                # La función send_summary_email() ahora maneja el parseo de Subject: y Body:
                 send_summary_email(summary_content, summary_content)
                 
                 # 3. Limpiar la respuesta para el usuario (eliminar el resumen y las etiquetas)
@@ -289,7 +285,6 @@ async def process_query(data: QueryModel):
 
     except Exception as e:
         print(f"Error procesando la consulta: {e}")
-        # En caso de error, el detalle se maneja con el código de error 500
         raise HTTPException(status_code=500, detail="Error interno del servidor al procesar la solicitud.")
 
 # --- INICIO LOCAL (Para pruebas) ---
