@@ -42,11 +42,10 @@ app.add_middleware(
 )
 
 # --- INICIALIZACIÓN DE CLIENTES ---
-# Definiciones globales iniciales
 pc = None
 openai_client = None
 pinecone_index = None
-SENDGRID_API_KEY = None # Declaración global
+SENDGRID_API_KEY = None 
 
 try:
     PORT = int(os.environ.get("PORT", 8080))
@@ -54,9 +53,7 @@ try:
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
     RECAPTCHA_SECRET_KEY = os.environ.get("RECAPTCHA_SECRET_KEY")
     PINECONE_ENVIRONMENT = os.environ.get("PINECONE_ENVIRONMENT")
-    
-    # NUEVA VARIABLE DE ENTORNO REQUERIDA para SendGrid
-    SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY") # Se obtiene la clave desde Cloud Run
+    SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY") 
 
     # CHEQUEO DE VARIABLES
     missing_vars = []
@@ -64,7 +61,7 @@ try:
     if not OPENAI_API_KEY: missing_vars.append("OPENAI_API_KEY")
     if not RECAPTCHA_SECRET_KEY: missing_vars.append("RECAPTCHA_SECRET_KEY")
     if not PINECONE_ENVIRONMENT: missing_vars.append("PINECONE_ENVIRONMENT")
-    if not SENDGRID_API_KEY: missing_vars.append("SENDGRID_API_KEY") # Chequeo de la nueva clave API
+    if not SENDGRID_API_KEY: missing_vars.append("SENDGRID_API_KEY") 
 
     if missing_vars:
         raise ValueError(f"Faltan variables de entorno esenciales: {', '.join(missing_vars)}")
@@ -86,41 +83,33 @@ def send_summary_email(subject: str, body: str, recipient: str = SALES_EMAIL):
     Función para enviar el resumen interno por correo electrónico usando la API de SendGrid.
     """
     
-    # Usa la variable global ya obtenida
     if not SENDGRID_API_KEY:
         print("ERROR DE CONFIGURACIÓN: SENDGRID_API_KEY no definida. Email no enviado.")
         return False
         
     try:
-        # 1. Parsear el Subject y el Body del texto generado por el LLM
-        # El LLM genera el subject y el body dentro del mismo string (summary_content)
+        # Lógica para parsear Subject y Body
         if "Subject:" in body:
-            # Buscamos el índice del "Body:" para separar
             body_index = body.find("Body:")
             
             if body_index != -1:
-                # El subject es todo lo que está entre "Subject:" y "Body:"
                 subject_line = body.split("Subject:")[1].split("Body:")[0].strip()
-                # El body es todo lo que está después de "Body:"
                 body_content = body[body_index + len("Body:"):].strip()
             else:
-                # Fallback de seguridad si el formato del LLM es incorrecto
                 print("ADVERTENCIA: Formato de LLM inesperado (Body: no encontrado). Usando texto crudo.")
                 subject_line = "Alerta de Lead: Revisión Manual de Contenido"
                 body_content = body
         else:
-            # Fallback en caso de que el formato del LLM sea incorrecto (no tiene ni Subject:)
             print("ADVERTENCIA: Formato de LLM inesperado. Usando texto crudo.")
             subject_line = "Alerta de Lead: Revisión Manual de Contenido"
             body_content = subject
             
     except Exception:
-        # Fallback de seguridad
         subject_line = "Error Inesperado en el Lead"
         body_content = "Contenido fallido: " + subject
 
     try:
-        # 2. Crear el objeto Mail
+        # Crear el objeto Mail y enviar
         message = Mail(
             from_email=SALES_EMAIL,              
             to_emails=recipient,                 
@@ -128,11 +117,9 @@ def send_summary_email(subject: str, body: str, recipient: str = SALES_EMAIL):
             plain_text_content=body_content      
         )
         
-        # 3. Conectar y enviar (la API usa HTTPS/443, no el puerto SMTP)
         sg = SendGridAPIClient(SENDGRID_API_KEY)
         response = sg.send(message)
 
-        # 4. Revisar la respuesta de la API (200 o 202 es éxito)
         if response.status_code in [200, 202]:
             print(f"ÉXITO: Email de resumen enviado a {recipient}. Código: {response.status_code}")
             return True
@@ -177,7 +164,7 @@ def generate_final_response(query, context, history):
     Genera la respuesta final utilizando el contexto, la memoria (history)
     y el Super Prompt final.
     """
-    # --- SUPER PROMPT COMPLETO (CON CORRECCIONES) ---
+    # --- SUPER PROMPT COMPLETO (VERSIÓN 3.0) ---
     system_prompt = (
         "Eres Agorito, un Asistente Legal Virtual, experto en Derecho Constitucional, Civil y de Familia de la ley Ecuatoriana. "
         "Tu personalidad es **vendedora, carismática y siempre profesional**. "
@@ -195,10 +182,10 @@ def generate_final_response(query, context, history):
         # 3. Contraste (El Límite de la Especialidad)
         "3. **Lógica de Contraste (Especialidad):** Limítate ESTRICTAMENTE a Derecho Constitucional, Civil y de Familia. Si el tema es de otra rama o no está en RAG, aplica la **Regla de Cierre de Contraste** inmediatamente: 'Lamentablemente, ese asunto está fuera de nuestra especialidad. Si lo desea, puede contactarnos directamente al {PHONE_NUMBER} para ver si podemos recomendarle un colega.' (Una vez en fase de venta (CTA), ignora los bajos resultados RAG). "
         
-        # 5. Cierre y Nutrición (El Límite de la Venta - CORRECCIÓN CLAVE AQUÍ)
+        # 5. Cierre y Nutrición (FLUIDEZ Y CONTROL)
         "5. **Lógica de Cierre y Nutrición:** Después de dar el análisis preliminar (Nivel 6-7), **DEBES** hacer un Call-to-Action (CTA) explícito. **PROHIBIDO usar frases genéricas** como 'buscar asesoría legal'. Dirige SIEMPRE a la firma. "
         "   - **Formato del CTA Único (Guía, NO Script):** Utiliza un formato similar a: 'Te recomendaría [acción específica] y que consideres buscar asesoría legal **con nuestro equipo**. ¿Deseas agendar tu **Consulta de Pago de {CONSULTATION_COST}** (acreditable, {CONSULTATION_CREDIT_MESSAGE})? ¿Te gustaría que te envíe los pasos para agendar la consulta?'"
-        "   - **Flujo de Datos (MEMORIA ESTRICTA Y ACUMULATIVA - REFORZADA):** Si el cliente acepta el CTA, **DEBES** solicitar los **4 DATOS CLAVE**: 1. Nombre completo, 2. WhatsApp, 3. Correo, **4. Preferencia de Consulta (Presencial/Virtual)**. **PROHIBIDO** solicitar fecha/hora o dirección exacta. **MEMORIA ESTRICTA Y ACUMULATIVA REFORZADA**: Debes reconocer y acumular **todos** los datos que el cliente te proporcione en cualquier mensaje, **INCLUYENDO CUALQUIER DATO PROVISTO EN MENSAJES ANTERIORES DONDE EL ASISTENTE FALLÓ**. **NUNCA DEBES REPETIR** la lista de 4 puntos. Solo pregunta de forma cortés por **el/los dato(s) EXACTO(S) que FALTA(N)**. Una vez que se tienen los 4 datos: 1) Genera el Resumen Interno (ENVUELTO en [INTERNAL_SUMMARY_START]...[INTERNAL_SUMMARY_END]) y 2) **ENVÍA ÚNICAMENTE** el mensaje final de confirmación: **'¡Perfecto! Ya tengo toda la información. Pronto alguien de nuestro equipo se pondrá en contacto contigo a través de tu [WhatsApp o correo] para coordinar la fecha y hora de tu consulta de {CONSULTATION_COST}, que se acreditará al costo total del servicio.'** "
+        "   - **Flujo de Datos (MEMORIA ESTRICTA Y ACUMULATIVA - REFORZADO):** Si el cliente acepta el CTA, **DEBES** solicitar los **4 DATOS CLAVE**: 1. Nombre completo, 2. WhatsApp, 3. Correo, **4. Preferencia de Consulta (Presencial/Virtual)**. **PROHIBIDO** solicitar fecha/hora o dirección exacta. **MEMORIA ESTRICTA Y ACUMULATIVA REFORZADA**: Debes reconocer y acumular **todos** los datos que el cliente te proporcione en cualquier mensaje. **NUNCA DEBES REPETIR** la lista de 4 puntos. Solo pregunta de forma cortés por **el/los dato(s) EXACTO(S) que FALTA(N)**. Una vez que se tienen los 4 datos: 1) Genera el Resumen Interno (ENVUELTO en [INTERNAL_SUMMARY_START]...[INTERNAL_SUMMARY_END]), **2) ESTÁ TERMINANTEMENTE PROHIBIDO GENERAR CUALQUIER OTRA LISTA O RESUMEN DE LOS 4 DATOS AL CLIENTE** y **3) ENVÍA ÚNICAMENTE** el mensaje final de confirmación: **'¡Perfecto! Ya tengo toda la información. Pronto alguien de nuestro equipo se pondrá en contacto contigo a través de tu [WhatsApp o correo] para coordinar la fecha y hora de tu consulta de {CONSULTATION_COST}, que se acreditará al costo total del servicio.'** "
 
         # Reglas de Conversación (LIBERTAD Y GUÍA)
         "**Reglas de Conversación:** "
@@ -206,12 +193,12 @@ def generate_final_response(query, context, history):
         " - **Nivel de Información:** Nivel 6 a 7 (detallado y útil). **PROHIBIDO** citar artículos o dar pasos a seguir (para obligar la consulta). "
         " - **PROHIBICIÓN CLAVE:** NO alucinar o inventar datos. Sé honesto si el contexto RAG es débil. "
         f" - **Meta de Venta:** El objetivo es la consulta de {CONSULTATION_COST} (acreditable). "
-        f" - **Cese de Interacción:** **CESA INMEDIATAMENTE TODA INTERACCIÓN** después de enviar el mensaje final de confirmación de datos."
+        f" - **Cese de Interacción (REFORZADA CONTRA FALLOS):** **CESA INMEDIATAMENTE TODA INTERACCIÓN** después de enviar el mensaje final de confirmación de datos. Si el cliente responde con un simple 'gracias', 'ok', 'listo' o similar, responde con una **despedida concisa y final** como 'A ti. Feliz día.' o '¡Gracias a ti!' y **LUEGO CESA TODA INTERACCIÓN (NO CONTINÚES LA CONVERSACIÓN NI APLIQUES OTRAS REGLAS).**"
         f" - **Transferencia a Humano (BLINDADA):** Si el cliente se frustra por la respuesta o el caso es objetivamente complejo o el LLM no tiene contexto RAG, aplica: 'Entiendo su preocupación. Este caso requiere la atención de uno de nuestros abogados. Por favor, contáctenos directamente al {PHONE_NUMBER} o envíe un correo a {SALES_EMAIL}.' **ESTA REGLA ESTÁ PROHIBIDA EN SU TOTALIDAD SI EL CLIENTE YA HA DICHO 'SÍ' A LA CONSULTA O ESTÁ EN PROCESO DE ENTREGA DE DATOS.**"
 
-        # Formato del Resumen (Uso Interno)
+        # Formato del Resumen (Uso Interno - ¡NIVEL 10 DE DETALLE!)
         "**Condiciones de Resumen (Generar para {SALES_EMAIL}):** Genera un resumen cuando el cliente ha provisto sus 4 datos. "
-        "**Formato del Resumen (Uso Interno de la IA):** Subject: [New Prospect - Legal Advice] o [High-Value Prospect]. Body: **Client Details:** Name: [Name], WhatsApp Number: [Number], Email: [Email, if available], **Consultation Type:** [Presencial/Virtual], City/Location: [Client's City/Location]. **Case Analysis (For Internal Use):** Legal Branch: [Relevant branch of law], Problem Summary: [Brief description of the legal problem.], Key Points: [Identify crucial facts and documents that are needed.]. **Recommendation to the Firm:** [Suggest 1 o 2 pasos inmediatos]. **Client's Objective:** [Describe lo que el cliente desea lograr]."
+        "**Formato del Resumen (Uso Interno de la IA - ¡NIVEL 10 DE DETALLE!):** Subject: [New Prospect - Legal Advice] o [High-Value Prospect]. Body: **Client Details:** Name: [Name], WhatsApp Number: [Number], Email: [Email, if available], **Consultation Type:** [Presencial/Virtual], City/Location: [Client's City/Location]. **Case Analysis (For Internal Use):** [**ANÁLISIS LEGAL COMPLETO Y PROFESIONAL** del caso, citando **Artículos y Leyes Relevantes** de la legislación ecuatoriana, basado en el RAG y la conversación]. **Recommendation to the Firm (ESTRATEGIA):** [Proponer una **estrategia legal sólida** de 3 a 5 pasos concretos para solucionar el tema, identificando la vía procesal a seguir (e.g., Demanda de Desalojo, Medidas Cautelares, etc.)]. **Client's Objective:** [Describir lo que el cliente desea lograr]."
     )
 
     # 3. Formatear el Contexto RAG y la Pregunta
@@ -249,32 +236,28 @@ def generate_final_response(query, context, history):
 async def process_query(data: QueryModel):
     """Endpoint principal para recibir la pregunta y devolver la respuesta."""
     try:
+        # 1. Validación de Seguridad
         if not await validate_recaptcha(data.recaptcha_token):
               raise HTTPException(status_code=403, detail="Validación reCAPTCHA fallida. Acceso denegado.")
 
+        # 2. Generación de Respuesta (RAG y LLM)
         query_embedding = generate_embedding(data.question)
         query_results = retrieve_context(query_embedding)
-
-        # 1. Generar la respuesta (que incluye el resumen interno y el mensaje al usuario)
         raw_llm_response = generate_final_response(data.question, query_results, data.history)
 
-        # 2. Lógica para DETECTAR y ENVIAR el resumen
+        # 3. Lógica para DETECTAR y ENVIAR el resumen interno
         summary_start_tag = "[INTERNAL_SUMMARY_START]"
         summary_end_tag = "[INTERNAL_SUMMARY_END]"
         
-        # Verificar si hay un resumen interno para enviar
         if summary_start_tag in raw_llm_response and summary_end_tag in raw_llm_response:
             try:
-                # Extraer el contenido del resumen
+                # Extraer y enviar el contenido del resumen
                 summary_content = raw_llm_response.split(summary_start_tag)[1].split(summary_end_tag)[0].strip()
-                
-                # Intentar enviar el correo (USA LA NUEVA FUNCIÓN DE SENDGRID)
                 send_summary_email(summary_content, summary_content)
                 
-                # 3. Limpiar la respuesta para el usuario (eliminar el resumen y las etiquetas)
+                # Limpiar la respuesta para el usuario
                 user_response = raw_llm_response.replace(summary_start_tag + summary_content + summary_end_tag, "").strip()
             except Exception as e:
-                # Si falla el parseo o el envío, se registra el error y se envía la respuesta cruda (o se limpia solo las etiquetas)
                 print(f"Advertencia: Fallo en el procesamiento del resumen interno. {e}")
                 user_response = raw_llm_response.replace(summary_start_tag, "").replace(summary_end_tag, "").strip()
         else:
