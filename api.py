@@ -100,6 +100,7 @@ def send_summary_email(summary_content: str, recipient: str = SALES_EMAIL):
         # El LLM DEBE generar "Subject:" y "Body:"
         if subject_tag in summary_content and body_tag in summary_content:
             
+            # Buscar la posición inicial de cada tag
             subject_start = summary_content.find(subject_tag)
             body_start = summary_content.find(body_tag)
             
@@ -113,7 +114,6 @@ def send_summary_email(summary_content: str, recipient: str = SALES_EMAIL):
 
         elif subject_tag in summary_content:
             # En caso de que falte Body:, usamos el subject y enviamos todo el contenido como cuerpo.
-            # Esto es un fallo de la IA, pero el email se envía
             subject_line = summary_content.split(subject_tag)[1].strip()
             body_content = summary_content
             print("ADVERTENCIA: Solo se encontró 'Subject:'. Usando el contenido completo como cuerpo.")
@@ -141,7 +141,7 @@ def send_summary_email(summary_content: str, recipient: str = SALES_EMAIL):
             print(f"ÉXITO: Email de resumen enviado a {recipient}. Código: {response.status_code}")
             return True
         else:
-            print(f"ERROR SG: Fallo al enviar email. Código: {response.status_code}. Cuerpo: {response.body}")
+            print(f"ERROR SG: Fallo al enviar email. Código: {response.status_code}. Cuerpo: {response.body.decode() if response.body else 'No body'}")
             return False
 
     except Exception as e:
@@ -267,22 +267,26 @@ async def process_query(data: QueryModel):
         summary_end_tag = "[INTERNAL_SUMMARY_END]"
         
         if summary_start_tag in raw_llm_response and summary_end_tag in raw_llm_response:
-            summary_content = None # Inicializamos a None por seguridad
+            summary_content = None # Inicializamos a None
             try:
-                # 🛠️ LA CORRECCIÓN CLAVE: Lógica de extracción más robusta
-                start_index = raw_llm_response.find(summary_start_tag) + len(summary_start_tag)
-                end_index = raw_llm_response.find(summary_end_tag)
+                # 🛠️ LA CORRECCIÓN CLAVE: Lógica de extracción más robusta usando split()
                 
-                # Solo extraemos si los índices son válidos y el inicio es antes que el final
-                if start_index != -1 and end_index != -1 and start_index < end_index:
-                    summary_content = raw_llm_response[start_index:end_index].strip()
+                # Paso 1: Dividir por la etiqueta de inicio. Tomar la segunda parte.
+                parts = raw_llm_response.split(summary_start_tag, 1) # Limitar a 1 división
+                if len(parts) > 1:
+                    content_after_start = parts[1]
+                    
+                    # Paso 2: Dividir la segunda parte por la etiqueta de fin. Tomar la primera parte.
+                    sub_parts = content_after_start.split(summary_end_tag, 1) # Limitar a 1 división
+                    if len(sub_parts) > 0:
+                        summary_content = sub_parts[0].strip()
+
                 
                 # 🔑 Llamar a SendGrid SOLO si se pudo extraer el contenido
                 if summary_content:
                     send_summary_email(summary_content)
                 
-                # Limpiar la respuesta para el usuario, independientemente del envío del email
-                # Usamos el contenido original, no el extraído, para evitar errores de Index
+                # Limpiar la respuesta para el usuario (eliminamos ambos tags)
                 user_response = raw_llm_response.replace(summary_start_tag, "").replace(summary_end_tag, "").strip()
 
             except Exception as e:
