@@ -76,7 +76,7 @@ except Exception as e:
     raise e
 
 
-# --- LÓGICA DE ENVÍO DE EMAIL (VÍA SENDGRID API) - CORREGIDA Y SIMPLIFICADA ---
+# --- LÓGICA DE ENVÍO DE EMAIL (VÍA SENDGRID API) ---
 
 def send_summary_email(summary_content: str, recipient: str = SALES_EMAIL):
     """
@@ -247,7 +247,7 @@ def generate_final_response(query, context, history):
 
     return final_response_text
 
-# --- ENDPOINT PRINCIPAL (AJUSTADO PARA EL NUEVO SEND_SUMMARY_EMAIL) ---
+# --- ENDPOINT PRINCIPAL (CON LÓGICA DE EXTRACCIÓN BLINDADA) ---
 
 @app.post("/query")
 async def process_query(data: QueryModel):
@@ -267,16 +267,26 @@ async def process_query(data: QueryModel):
         summary_end_tag = "[INTERNAL_SUMMARY_END]"
         
         if summary_start_tag in raw_llm_response and summary_end_tag in raw_llm_response:
+            summary_content = None # Inicializamos a None por seguridad
             try:
-                # Extraer el contenido del resumen
-                summary_content = raw_llm_response.split(summary_start_tag)[1].split(summary_end_tag)[0].strip()
+                # 🛠️ LA CORRECCIÓN CLAVE: Lógica de extracción más robusta
+                start_index = raw_llm_response.find(summary_start_tag) + len(summary_start_tag)
+                end_index = raw_llm_response.find(summary_end_tag)
                 
-                # LLAMADA CORREGIDA: Ahora solo pasamos el contenido del resumen
-                send_summary_email(summary_content)
+                # Solo extraemos si los índices son válidos y el inicio es antes que el final
+                if start_index != -1 and end_index != -1 and start_index < end_index:
+                    summary_content = raw_llm_response[start_index:end_index].strip()
                 
-                # Limpiar la respuesta para el usuario
-                user_response = raw_llm_response.replace(summary_start_tag + summary_content + summary_end_tag, "").strip()
+                # 🔑 Llamar a SendGrid SOLO si se pudo extraer el contenido
+                if summary_content:
+                    send_summary_email(summary_content)
+                
+                # Limpiar la respuesta para el usuario, independientemente del envío del email
+                # Usamos el contenido original, no el extraído, para evitar errores de Index
+                user_response = raw_llm_response.replace(summary_start_tag, "").replace(summary_end_tag, "").strip()
+
             except Exception as e:
+                # En caso de cualquier error de parsing, se registra el fallo, pero la respuesta va al usuario.
                 print(f"Advertencia: Fallo en el procesamiento del resumen interno. {e}")
                 user_response = raw_llm_response.replace(summary_start_tag, "").replace(summary_end_tag, "").strip()
         else:
@@ -287,6 +297,7 @@ async def process_query(data: QueryModel):
 
     except Exception as e:
         print(f"Error procesando la consulta: {e}")
+        # Aseguramos que los errores críticos internos no revelen información sensible al frontend
         raise HTTPException(status_code=500, detail="Error interno del servidor al procesar la solicitud.")
 
 # --- INICIO LOCAL (Para pruebas) ---
