@@ -111,8 +111,8 @@ def send_summary_email(subject: str, body: str, recipient: str = SALES_EMAIL):
     try:
         # Crear el objeto Mail y enviar
         message = Mail(
-            from_email=SALES_EMAIL,              
-            to_emails=recipient,                 
+            from_email=SALES_EMAIL,             
+            to_emails=recipient,              
             subject=subject_line,
             plain_text_content=body_content      
         )
@@ -130,6 +130,47 @@ def send_summary_email(subject: str, body: str, recipient: str = SALES_EMAIL):
     except Exception as e:
         print(f"ERROR FATAL al enviar email por SendGrid: {e}")
         return False
+
+
+# 🟢 COMIENZO DEL CÓDIGO DE PRUEBA AÑADIDO (FUNCIÓN)
+def execute_sendgrid_test(to_email: str):
+    """
+    Intenta enviar un correo usando las variables de entorno cargadas en la nube.
+    """
+    api_key = os.environ.get("SENDGRID_API_KEY")
+    from_email = os.environ.get("SALES_EMAIL") 
+    
+    # Validaciones rápidas de variables de entorno
+    if not api_key:
+        return {"error": "SENDGRID_API_KEY no cargada o variable de entorno faltante"}, 500
+
+    if not from_email:
+        return {"error": "SALES_EMAIL no cargada o variable de entorno faltante"}, 500
+
+    # Estructura del correo de prueba
+    message = Mail(
+        from_email=from_email,
+        to_emails=to_email,
+        subject='[TEST NUBE] Prueba de Conectividad Final',
+        plain_text_content='Si recibes esto, el problema no es la API Key ni el dominio.'
+    )
+
+    try:
+        # Intento de conexión y envío
+        sg = SendGridAPIClient(api_key)
+        response = sg.send(message)
+        
+        # Devolvemos el código de estado (202 es éxito)
+        return {
+            "status": "SUCCESS" if response.status_code in [200, 202] else "FAIL",
+            "status_code": response.status_code,
+            "sendgrid_body_response": response.body.decode() if response.body else "No body"
+        }, 200
+
+    except Exception as e:
+        # Esto captura errores de conexión o autenticación
+        return {"status": "ERROR FATAL", "details": str(e)}, 500
+# 🔴 FIN DEL CÓDIGO DE PRUEBA AÑADIDO (FUNCIÓN)
 
 # --- LÓGICA DE SEGURIDAD (reCAPTCHA) ---
 async def validate_recaptcha(token: str, min_score: float = 0.5):
@@ -184,8 +225,8 @@ def generate_final_response(query, context, history):
         
         # 5. Cierre y Nutrición (FLUIDEZ Y CONTROL)
         "5. **Lógica de Cierre y Nutrición:** Después de dar el análisis preliminar (Nivel 6-7), **DEBES** hacer un Call-to-Action (CTA) explícito. **PROHIBIDO usar frases genéricas** como 'buscar asesoría legal'. Dirige SIEMPRE a la firma. "
-        "   - **Formato del CTA Único (Guía, NO Script):** Utiliza un formato similar a: 'Te recomendaría [acción específica] y que consideres buscar asesoría legal **con nuestro equipo**. ¿Deseas agendar tu **Consulta de Pago de {CONSULTATION_COST}** (acreditable, {CONSULTATION_CREDIT_MESSAGE})? ¿Te gustaría que te envíe los pasos para agendar la consulta?'"
-        "   - **Flujo de Datos (MEMORIA ESTRICTA Y ACUMULATIVA - REFORZADO):** Si el cliente acepta el CTA, **DEBES** solicitar los **4 DATOS CLAVE**: 1. Nombre completo, 2. WhatsApp, 3. Correo, **4. Preferencia de Consulta (Presencial/Virtual)**. **PROHIBIDO** solicitar fecha/hora o dirección exacta. **MEMORIA ESTRICTA Y ACUMULATIVA REFORZADA**: Debes reconocer y acumular **todos** los datos que el cliente te proporcione en cualquier mensaje. **NUNCA DEBES REPETIR** la lista de 4 puntos. Solo pregunta de forma cortés por **el/los dato(s) EXACTO(S) que FALTA(N)**. Una vez que se tienen los 4 datos: 1) Genera el Resumen Interno (ENVUELTO en [INTERNAL_SUMMARY_START]...[INTERNAL_SUMMARY_END]), **2) ESTÁ TERMINANTEMENTE PROHIBIDO GENERAR CUALQUIER OTRA LISTA O RESUMEN DE LOS 4 DATOS AL CLIENTE** y **3) ENVÍA ÚNICAMENTE** el mensaje final de confirmación: **'¡Perfecto! Ya tengo toda la información. Pronto alguien de nuestro equipo se pondrá en contacto contigo a través de tu [WhatsApp o correo] para coordinar la fecha y hora de tu consulta de {CONSULTATION_COST}, que se acreditará al costo total del servicio.'** "
+        "    - **Formato del CTA Único (Guía, NO Script):** Utiliza un formato similar a: 'Te recomendaría [acción específica] y que consideres buscar asesoría legal **con nuestro equipo**. ¿Deseas agendar tu **Consulta de Pago de {CONSULTATION_COST}** (acreditable, {CONSULTATION_CREDIT_MESSAGE})? ¿Te gustaría que te envíe los pasos para agendar la consulta?'"
+        "    - **Flujo de Datos (MEMORIA ESTRICTA Y ACUMULATIVA - REFORZADO):** Si el cliente acepta el CTA, **DEBES** solicitar los **4 DATOS CLAVE**: 1. Nombre completo, 2. WhatsApp, 3. Correo, **4. Preferencia de Consulta (Presencial/Virtual)**. **PROHIBIDO** solicitar fecha/hora o dirección exacta. **MEMORIA ESTRICTA Y ACUMULATIVA REFORZADA**: Debes reconocer y acumular **todos** los datos que el cliente te proporcione en cualquier mensaje. **NUNCA DEBES REPETIR** la lista de 4 puntos. Solo pregunta de forma cortés por **el/los dato(s) EXACTO(S) que FALTA(N)**. Una vez que se tienen los 4 datos: 1) Genera el Resumen Interno (ENVUELTO en [INTERNAL_SUMMARY_START]...[INTERNAL_SUMMARY_END]), **2) ESTÁ TERMINANTEMENTE PROHIBIDO GENERAR CUALQUIER OTRA LISTA O RESUMEN DE LOS 4 DATOS AL CLIENTE** y **3) ENVÍA ÚNICAMENTE** el mensaje final de confirmación: **'¡Perfecto! Ya tengo toda la información. Pronto alguien de nuestro equipo se pondrá en contacto contigo a través de tu [WhatsApp o correo] para coordinar la fecha y hora de tu consulta de {CONSULTATION_COST}, que se acreditará al costo total del servicio.'** "
 
         # Reglas de Conversación (LIBERTAD Y GUÍA)
         "**Reglas de Conversación:** "
@@ -230,6 +271,17 @@ def generate_final_response(query, context, history):
 
     return final_response_text
 
+# 🟢 COMIENZO DEL CÓDIGO DE PRUEBA AÑADIDO (ENDPOINT)
+@app.post("/test-sendgrid")
+async def send_test_email(email_destino: str):
+    """
+    Endpoint temporal para probar la funcionalidad de SendGrid.
+    Recibe el email_destino en el cuerpo de la solicitud (JSON).
+    """
+    status, code = execute_sendgrid_test(email_destino)
+    return status
+# 🔴 FIN DEL CÓDIGO DE PRUEBA AÑADIDO (ENDPOINT)
+
 # --- ENDPOINT PRINCIPAL (SIN CAMBIOS) ---
 
 @app.post("/query")
@@ -238,7 +290,7 @@ async def process_query(data: QueryModel):
     try:
         # 1. Validación de Seguridad
         if not await validate_recaptcha(data.recaptcha_token):
-              raise HTTPException(status_code=403, detail="Validación reCAPTCHA fallida. Acceso denegado.")
+             raise HTTPException(status_code=403, detail="Validación reCAPTCHA fallida. Acceso denegado.")
 
         # 2. Generación de Respuesta (RAG y LLM)
         query_embedding = generate_embedding(data.question)
