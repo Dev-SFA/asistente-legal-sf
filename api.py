@@ -30,10 +30,6 @@ class QueryModel(BaseModel):
     recaptcha_token: str
     history: list[dict] = [] # ACEPTA EL HISTORIAL
 
-# 🟢 NUEVO MODELO DE DATOS AÑADIDO (PARA LA PRUEBA)
-class EmailTestModel(BaseModel):
-    email_destino: str
-
 # --- INICIALIZACIÓN DE FASTAPI Y CORS ---
 
 app = FastAPI(title="Asistente Legal SF API (RAG con GPT-4o Mini)")
@@ -80,37 +76,54 @@ except Exception as e:
     raise e
 
 
-# --- LÓGICA DE ENVÍO DE EMAIL (VÍA SENDGRID API) ---
+# --- LÓGICA DE ENVÍO DE EMAIL (VÍA SENDGRID API) - CORREGIDA Y SIMPLIFICADA ---
 
-def send_summary_email(subject: str, body: str, recipient: str = SALES_EMAIL):
+def send_summary_email(summary_content: str, recipient: str = SALES_EMAIL):
     """
     Función para enviar el resumen interno por correo electrónico usando la API de SendGrid.
+    summary_content es el texto extraído entre las etiquetas [INTERNAL_SUMMARY_START]...[INTERNAL_SUMMARY_END].
     """
     
     if not SENDGRID_API_KEY:
         print("ERROR DE CONFIGURACIÓN: SENDGRID_API_KEY no definida. Email no enviado.")
         return False
         
+    # Valores por defecto para el email
+    subject_line = "Alerta de Lead: Revisión Manual de Contenido (Error de Formato)"
+    body_content = summary_content # El contenido completo del LLM como fallback
+
     try:
-        # Lógica para parsear Subject y Body
-        if "Subject:" in body:
-            body_index = body.find("Body:")
+        # 1. Buscar los marcadores de Subject y Body
+        subject_tag = "Subject:"
+        body_tag = "Body:"
+        
+        # El LLM DEBE generar "Subject:" y "Body:"
+        if subject_tag in summary_content and body_tag in summary_content:
             
-            if body_index != -1:
-                subject_line = body.split("Subject:")[1].split("Body:")[0].strip()
-                body_content = body[body_index + len("Body:"):].strip()
-            else:
-                print("ADVERTENCIA: Formato de LLM inesperado (Body: no encontrado). Usando texto crudo.")
-                subject_line = "Alerta de Lead: Revisión Manual de Contenido"
-                body_content = body
-        else:
-            print("ADVERTENCIA: Formato de LLM inesperado. Usando texto crudo.")
-            subject_line = "Alerta de Lead: Revisión Manual de Contenido"
-            body_content = subject
+            subject_start = summary_content.find(subject_tag)
+            body_start = summary_content.find(body_tag)
             
-    except Exception:
-        subject_line = "Error Inesperado en el Lead"
-        body_content = "Contenido fallido: " + subject
+            # 2. Lógica para extraer el asunto (entre Subject: y Body:)
+            if subject_start != -1 and body_start > subject_start:
+                # Extraer lo que está DESPUÉS del tag 'Subject:' y ANTES del tag 'Body:'
+                subject_line = summary_content[subject_start + len(subject_tag):body_start].strip()
+                
+                # 3. Lógica para extraer el cuerpo (todo después de Body:)
+                body_content = summary_content[body_start + len(body_tag):].strip()
+
+        elif subject_tag in summary_content:
+            # En caso de que falte Body:, usamos el subject y enviamos todo el contenido como cuerpo.
+            # Esto es un fallo de la IA, pero el email se envía
+            subject_line = summary_content.split(subject_tag)[1].strip()
+            body_content = summary_content
+            print("ADVERTENCIA: Solo se encontró 'Subject:'. Usando el contenido completo como cuerpo.")
+            
+    except Exception as e:
+        # Captura cualquier error de parsing y envía el contenido crudo
+        print(f"ERROR DE PARSING FATAL en send_summary_email: {e}")
+        subject_line = "Error Inesperado en el Lead (Fallo de Parsing)"
+        body_content = "Contenido original fallido:\n" + summary_content
+
 
     try:
         # Crear el objeto Mail y enviar
@@ -134,48 +147,7 @@ def send_summary_email(subject: str, body: str, recipient: str = SALES_EMAIL):
     except Exception as e:
         print(f"ERROR FATAL al enviar email por SendGrid: {e}")
         return False
-
-
-# 🟢 CÓDIGO DE PRUEBA AÑADIDO (FUNCIÓN)
-def execute_sendgrid_test(to_email: str):
-    """
-    Intenta enviar un correo usando las variables de entorno cargadas en la nube.
-    """
-    api_key = os.environ.get("SENDGRID_API_KEY")
-    from_email = os.environ.get("SALES_EMAIL") 
-    
-    # Validaciones rápidas de variables de entorno
-    if not api_key:
-        return {"error": "SENDGRID_API_KEY no cargada o variable de entorno faltante"}, 500
-
-    if not from_email:
-        return {"error": "SALES_EMAIL no cargada o variable de entorno faltante"}, 500
-
-    # Estructura del correo de prueba
-    message = Mail(
-        from_email=from_email,
-        to_emails=to_email,
-        subject='[TEST NUBE] Prueba de Conectividad Final',
-        plain_text_content='Si recibes esto, el problema no es la API Key ni el dominio.'
-    )
-
-    try:
-        # Intento de conexión y envío
-        sg = SendGridAPIClient(api_key)
-        response = sg.send(message)
         
-        # Devolvemos el código de estado (202 es éxito)
-        return {
-            "status": "SUCCESS" if response.status_code in [200, 202] else "FAIL",
-            "status_code": response.status_code,
-            "sendgrid_body_response": response.body.decode() if response.body else "No body"
-        }, 200
-
-    except Exception as e:
-        # Esto captura errores de conexión o autenticación
-        return {"status": "ERROR FATAL", "details": str(e)}, 500
-# 🔴 FIN DEL CÓDIGO DE PRUEBA AÑADIDO (FUNCIÓN)
-
 # --- LÓGICA DE SEGURIDAD (reCAPTCHA) ---
 async def validate_recaptcha(token: str, min_score: float = 0.5):
     if token == 'EsteEsUnTokenDePruebaTemporal':
@@ -275,18 +247,7 @@ def generate_final_response(query, context, history):
 
     return final_response_text
 
-# 🟢 CÓDIGO DE PRUEBA AÑADIDO (ENDPOINT) - CORREGIDO
-@app.post("/test-sendgrid")
-async def send_test_email(data: EmailTestModel): # <--- ¡CORRECCIÓN CLAVE!
-    """
-    Endpoint temporal para probar la funcionalidad de SendGrid.
-    Recibe el email_destino en el cuerpo de la solicitud (JSON).
-    """
-    status, code = execute_sendgrid_test(data.email_destino) # <--- ¡CORRECCIÓN CLAVE!
-    return status
-# 🔴 FIN DEL CÓDIGO DE PRUEBA AÑADIDO (ENDPOINT)
-
-# --- ENDPOINT PRINCIPAL (SIN CAMBIOS) ---
+# --- ENDPOINT PRINCIPAL (AJUSTADO PARA EL NUEVO SEND_SUMMARY_EMAIL) ---
 
 @app.post("/query")
 async def process_query(data: QueryModel):
@@ -307,9 +268,11 @@ async def process_query(data: QueryModel):
         
         if summary_start_tag in raw_llm_response and summary_end_tag in raw_llm_response:
             try:
-                # Extraer y enviar el contenido del resumen
+                # Extraer el contenido del resumen
                 summary_content = raw_llm_response.split(summary_start_tag)[1].split(summary_end_tag)[0].strip()
-                send_summary_email(summary_content, summary_content)
+                
+                # LLAMADA CORREGIDA: Ahora solo pasamos el contenido del resumen
+                send_summary_email(summary_content)
                 
                 # Limpiar la respuesta para el usuario
                 user_response = raw_llm_response.replace(summary_start_tag + summary_content + summary_end_tag, "").strip()
