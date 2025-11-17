@@ -30,6 +30,10 @@ class QueryModel(BaseModel):
     recaptcha_token: str
     history: list[dict] = [] # ACEPTA EL HISTORIAL
 
+# 🟢 NUEVO MODELO DE DATOS AÑADIDO (PARA LA PRUEBA)
+class EmailTestModel(BaseModel):
+    email_destino: str
+
 # --- INICIALIZACIÓN DE FASTAPI Y CORS ---
 
 app = FastAPI(title="Asistente Legal SF API (RAG con GPT-4o Mini)")
@@ -132,7 +136,7 @@ def send_summary_email(subject: str, body: str, recipient: str = SALES_EMAIL):
         return False
 
 
-# 🟢 COMIENZO DEL CÓDIGO DE PRUEBA AÑADIDO (FUNCIÓN)
+# 🟢 CÓDIGO DE PRUEBA AÑADIDO (FUNCIÓN)
 def execute_sendgrid_test(to_email: str):
     """
     Intenta enviar un correo usando las variables de entorno cargadas en la nube.
@@ -271,14 +275,14 @@ def generate_final_response(query, context, history):
 
     return final_response_text
 
-# 🟢 COMIENZO DEL CÓDIGO DE PRUEBA AÑADIDO (ENDPOINT)
+# 🟢 CÓDIGO DE PRUEBA AÑADIDO (ENDPOINT) - CORREGIDO
 @app.post("/test-sendgrid")
-async def send_test_email(email_destino: str):
+async def send_test_email(data: EmailTestModel): # <--- ¡CORRECCIÓN CLAVE!
     """
     Endpoint temporal para probar la funcionalidad de SendGrid.
     Recibe el email_destino en el cuerpo de la solicitud (JSON).
     """
-    status, code = execute_sendgrid_test(email_destino)
+    status, code = execute_sendgrid_test(data.email_destino) # <--- ¡CORRECCIÓN CLAVE!
     return status
 # 🔴 FIN DEL CÓDIGO DE PRUEBA AÑADIDO (ENDPOINT)
 
