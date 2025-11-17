@@ -197,7 +197,7 @@ def generate_final_response(query, context, history):
         f"2. **Lógica de Interrogación:** En la **primera interacción** con el cliente (que contenga una consulta legal), y después de una breve frase de empatía, solicita los 5 datos clave (QUÉ, QUIÉN, CUÁNDO, DÓNDE, CIUDAD/UBICACIÓN) de forma **directa y concisa**. Está **PROHIBIDO** repetir el saludo inicial ('¡Hola! Soy Agorito...') ya que el frontend lo maneja. "
         
         # 3. Contraste (El Límite de la Especialidad)
-        "3. **Lógica de Contraste (Especialidad):** Limítate ESTRICTAMENTE a Derecho Constitucional, Civil y de Familia. Si el tema es de otra rama o no está en RAG, aplica la **Regla de Cierre de Contraste** inmediatamente: 'Lamentablemente, ese asunto está fuera de nuestra especialidad. Si lo desea, puede contactarnos directamente al {PHONE_NUMBER} para ver si podemos recomendarle un colega.' (Una vez en fase de venta (CTA), ignora los bajos resultados RAG). "
+        "3. **Lógica de Contraste (Especialidad):** Limítate ESTRICTAMENTE a Derecho Constitucional, Civil y de Familia. Si el tema es de otra rama o no está en RAG, aplica la **Regla de Cierre de Contraste** inmediatamente: 'Lamentablemente, ese asunto está fuera de nuestra especialidad. Si lo desea, puede contactarnos directamente al {PHONE_NUMBER} o envíe un correo a {SALES_EMAIL} para ver si podemos recomendarle un colega.' (Una vez en fase de venta (CTA), ignora los bajos resultados RAG). "
         
         # 5. Cierre y Nutrición (FLUIDEZ Y CONTROL)
         "5. **Lógica de Cierre y Nutrición:** Después de dar el análisis preliminar (Nivel 6-7), **DEBES** hacer un Call-to-Action (CTA) explícito. **PROHIBIDO usar frases genéricas** como 'buscar asesoría legal'. Dirige SIEMPRE a la firma. "
@@ -247,7 +247,7 @@ def generate_final_response(query, context, history):
 
     return final_response_text
 
-# --- ENDPOINT PRINCIPAL (CON LÓGICA DE EXTRACCIÓN BLINDADA) ---
+# --- ENDPOINT PRINCIPAL (CON LOGGING DE DEBUGGING) ---
 
 @app.post("/query")
 async def process_query(data: QueryModel):
@@ -261,6 +261,10 @@ async def process_query(data: QueryModel):
         query_embedding = generate_embedding(data.question)
         query_results = retrieve_context(query_embedding)
         raw_llm_response = generate_final_response(data.question, query_results, data.history)
+        
+        # 🎯 ESTA ES LA LÍNEA CRÍTICA DE DEBUGGING: Muestra la respuesta cruda en los logs de Cloud Run
+        print(f"DEBUG: RAW LLM RESPONSE:\n{raw_llm_response}")
+        # ------------------------------------------------------------------------------------------
 
         # 3. Lógica para DETECTAR y ENVIAR el resumen interno
         summary_start_tag = "[INTERNAL_SUMMARY_START]"
@@ -269,7 +273,7 @@ async def process_query(data: QueryModel):
         if summary_start_tag in raw_llm_response and summary_end_tag in raw_llm_response:
             summary_content = None # Inicializamos a None
             try:
-                # 🛠️ LA CORRECCIÓN CLAVE: Lógica de extracción más robusta usando split()
+                # Lógica de extracción más robusta usando split()
                 
                 # Paso 1: Dividir por la etiqueta de inicio. Tomar la segunda parte.
                 parts = raw_llm_response.split(summary_start_tag, 1) # Limitar a 1 división
