@@ -79,9 +79,7 @@ except Exception as e:
 # --- LÓGICA DE ENVÍO DE EMAIL (VÍA SENDGRID API) ---
 
 def send_summary_email(summary_content: str, recipient: str = SALES_EMAIL):
-    """
-    Función para enviar el resumen interno por correo electrónico usando la API de SendGrid.
-    """
+    """Función para enviar el resumen interno por correo electrónico usando la API de SendGrid."""
     
     if not SENDGRID_API_KEY:
         print("ERROR DE CONFIGURACIÓN: SENDGRID_API_KEY no definida. Email no enviado.")
@@ -91,7 +89,6 @@ def send_summary_email(summary_content: str, recipient: str = SALES_EMAIL):
     body_content = summary_content
 
     try:
-        # 1. Buscar los marcadores de Subject y Body
         subject_tag = "Subject:"
         body_tag = "Body:"
         
@@ -101,27 +98,21 @@ def send_summary_email(summary_content: str, recipient: str = SALES_EMAIL):
             body_start = summary_content.find(body_tag)
             
             if subject_start != -1 and body_start > subject_start:
-                # Extraer el Asunto
                 subject_line = summary_content[subject_start + len(subject_tag):body_start].strip()
-                
-                # Extraer el Cuerpo
                 body_content = summary_content[body_start + len(body_tag):].strip()
 
         elif subject_tag in summary_content:
-            # Fallback si falta Body:
             subject_line = summary_content.split(subject_tag)[1].strip()
             body_content = summary_content
             print("ADVERTENCIA: Solo se encontró 'Subject:'. Usando el contenido completo como cuerpo.")
             
     except Exception as e:
-        # Fallback si falla el parsing
         print(f"ERROR DE PARSING FATAL en send_summary_email: {e}")
         subject_line = "Error Inesperado en el Lead (Fallo de Parsing)"
         body_content = "Contenido original fallido:\n" + summary_content
 
 
     try:
-        # Crear el objeto Mail y enviar
         message = Mail(
             from_email=SALES_EMAIL,             
             to_emails=recipient,              
@@ -192,11 +183,14 @@ def generate_final_response(query, context, history):
         "1. **Alcance:** Limítate a Constitucional, Civil y Familia. Si no aplica, el `user_response` debe usar la 'Regla de Cierre de Contraste' (ver abajo) y `summary_email` debe ser `''`."
         f"2. **Venta (CTA):** Después del análisis (Nivel 6-7, sin citar artículos o dar pasos procesales), guía siempre a la Consulta de Pago de {CONSULTATION_COST} (acreditable)."
         "3. **Datos (4 Claves):** Si el cliente acepta el CTA, solicita los 4 datos (Nombre, WhatsApp, Correo, Preferencia de Consulta). Sé acumulativo. **NO** repitas la lista completa, solo pide lo que falta."
+        # 🔑 REGLA NUEVA: Evitar la repetición de los $40 USD durante la recolección de datos
+        "4. **Flujo de Datos:** Cuando pidas los datos restantes, **SÉ EXTREMADAMENTE BREVE** (ej. 'Solo necesito tu [dato faltante]'). **NUNCA** repitas la frase de 'Consulta de 40 USD' ni detalles del caso mientras recolectas la información."
         
         "**Formato de Salida ESTRICTO (JSON):**\n"
         "**Condición A: VENTA FINALIZADA (4 Datos Recolectados):**\n"
-        "   - **`summary_email`:** Contiene el resumen profesional del caso, comenzando con **'Subject:'** y seguido de **'Body:'**. \n"
-        "   - **`user_response`:** Contiene **ÚNICAMENTE** el mensaje de confirmación de agendamiento: '¡Perfecto! Ya tengo toda la información. Pronto alguien de nuestro equipo se pondrá en contacto contigo a través de tu [WhatsApp o correo] para coordinar la fecha y hora de tu consulta de 40 USD, que se acreditará al costo total del servicio.'\n\n"
+        "   - **`summary_email`:** Contiene el resumen profesional, comenzando con **'Subject:'** y seguido de **'Body:'**. \n"
+        # 🔑 REGLA REFORZADA: Evitar el fallo del JSON final
+        "   - **`user_response`:** Contiene **ÚNICAMENTE** el mensaje de confirmación de agendamiento: '¡Perfecto! Ya tengo toda la información. Pronto alguien de nuestro equipo se pondrá en contacto contigo a través de tu [WhatsApp o correo] para coordinar la fecha y hora de tu consulta de 40 USD, que se acreditará al costo total del servicio.' **NO INCLUYAS RESÚMENES DE DATOS EN ESTE CAMPO.**\n\n"
         "**Condición B: CONVERSACIÓN, ANÁLISIS, O CESE DE INTERACCIÓN:**\n"
         "   - **`summary_email`:** Debe ser una **cadena vacía** (`''`).\n"
         "   - **`user_response`:** Debe ser el mensaje de Agorito para el cliente (e.g., análisis legal, pregunta de seguimiento de datos, o la despedida concisa si el cliente dijo 'gracias').\n\n"
@@ -206,7 +200,7 @@ def generate_final_response(query, context, history):
         "**Case Analysis (For Internal Use):** [**ANÁLISIS LEGAL TÉCNICO** (Nivel 9-10). **DEBE CITAR SIEMPRE** las leyes, códigos o artículos Ecuatorianos aplicables al caso. No uses lenguaje de cliente.] " 
         "**Recommendation to the Firm (ESTRATEGIA):** [Proponer una estrategia legal sólida de 3 a 5 pasos]. **Client's Objective:** [Describir lo que el cliente desea lograr].\n\n"
         
-        # 🚨 INYECCIÓN DE CONTEXTO PARA OPTIMIZACIÓN DE VELOCIDAD
+        # INYECCIÓN DE CONTEXTO PARA OPTIMIZACIÓN DE VELOCIDAD
         f"**CONTEXTO RAG PARA EL ANÁLISIS:** Utiliza el siguiente contexto legal extraído para responder a la pregunta del usuario. Si el contexto es débil o irrelevante, sigue las reglas de Contraste/Venta.\n"
         f"--- CONTEXTO ---\n{context_text}\n--- FIN CONTEXTO ---\n"
         
@@ -215,7 +209,7 @@ def generate_final_response(query, context, history):
         " - **Cese de Interacción (Final):** Si el cliente responde con un simple 'gracias' después de la confirmación, el `user_response` debe ser: 'A ti. Feliz día.' o '¡Gracias a ti!'"
     )
 
-    # 3. Construir la Matriz de Mensajes
+    # 4. Construir la Matriz de Mensajes
     messages = [
         {"role": "system", "content": system_prompt}
     ]
@@ -267,7 +261,9 @@ async def process_query(data: QueryModel):
         except json.JSONDecodeError as e:
             # En caso de que el modelo falle al generar JSON
             print(f"ERROR DECODE: Fallo al decodificar JSON de la respuesta del LLM. {e}")
-            user_response = "Disculpa, ha ocurrido un error de procesamiento. Por favor, reformula tu pregunta o contáctanos directamente al +593 98 375 6678."
+            # El mensaje que el usuario estaba viendo venía de un error no controlado en el frontend,
+            # lo reemplazamos con una respuesta controlada y profesional.
+            user_response = "Disculpa, ha ocurrido un error de procesamiento. Por favor, reformula tu última respuesta o contáctanos directamente al +593 98 375 6678."
             summary_content = ""
             
         except Exception as e:
