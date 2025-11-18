@@ -167,7 +167,8 @@ def retrieve_context(embedding):
 def generate_final_response(query, context, history):
     """
     Genera la respuesta final. El CONTEXTO RAG se inyecta en el System Prompt
-    para acelerar la respuesta del LLM y se exige un resumen interno técnico (Nivel 9-10).
+    para acelerar la respuesta del LLM y se exige un resumen interno técnico (Nivel 9-10),
+    incluyendo los 4 W's y datos llenos.
     """
     
     # 1. Preparar RAG Context
@@ -183,20 +184,20 @@ def generate_final_response(query, context, history):
         "1. **Alcance:** Limítate a Constitucional, Civil y Familia. Si no aplica, el `user_response` debe usar la 'Regla de Cierre de Contraste' (ver abajo) y `summary_email` debe ser `''`."
         f"2. **Venta (CTA):** Después del análisis (Nivel 6-7, sin citar artículos o dar pasos procesales), guía siempre a la Consulta de Pago de {CONSULTATION_COST} (acreditable)."
         "3. **Datos (4 Claves):** Si el cliente acepta el CTA, solicita los 4 datos (Nombre, WhatsApp, Correo, Preferencia de Consulta). Sé acumulativo. **NO** repitas la lista completa, solo pide lo que falta."
-        # 🔑 REGLA NUEVA: Evitar la repetición de los $40 USD durante la recolección de datos
         "4. **Flujo de Datos:** Cuando pidas los datos restantes, **SÉ EXTREMADAMENTE BREVE** (ej. 'Solo necesito tu [dato faltante]'). **NUNCA** repitas la frase de 'Consulta de 40 USD' ni detalles del caso mientras recolectas la información."
         
         "**Formato de Salida ESTRICTO (JSON):**\n"
         "**Condición A: VENTA FINALIZADA (4 Datos Recolectados):**\n"
         "   - **`summary_email`:** Contiene el resumen profesional, comenzando con **'Subject:'** y seguido de **'Body:'**. \n"
-        # 🔑 REGLA REFORZADA: Evitar el fallo del JSON final
         "   - **`user_response`:** Contiene **ÚNICAMENTE** el mensaje de confirmación de agendamiento: '¡Perfecto! Ya tengo toda la información. Pronto alguien de nuestro equipo se pondrá en contacto contigo a través de tu [WhatsApp o correo] para coordinar la fecha y hora de tu consulta de 40 USD, que se acreditará al costo total del servicio.' **NO INCLUYAS RESÚMENES DE DATOS EN ESTE CAMPO.**\n\n"
         "**Condición B: CONVERSACIÓN, ANÁLISIS, O CESE DE INTERACCIÓN:**\n"
         "   - **`summary_email`:** Debe ser una **cadena vacía** (`''`).\n"
         "   - **`user_response`:** Debe ser el mensaje de Agorito para el cliente (e.g., análisis legal, pregunta de seguimiento de datos, o la despedida concisa si el cliente dijo 'gracias').\n\n"
         
+        # 🔑 INSTRUCCIÓN DE TEMPLATE MEJORADA PARA RESOLVER EL PROBLEMA DEL EMAIL:
         "**Contenido del `summary_email` (Solo Condición A):**\n"
-        "Subject: [New Prospect - Legal Advice] o [High-Value Prospect]. Body: **Client Details:** Name: [Name], WhatsApp Number: [Number], Email: [Email, if available], **Consultation Type:** [Presencial/Virtual], City/Location: [Client's City/Location]. "
+        "Subject: [New Prospect - Legal Advice] o [High-Value Prospect]. Body: **Client Details:** Name: [Insert Name], WhatsApp Number: [Insert Number], Email: [Insert Email], Consultation Type: [Insert Preference], City/Location: [Insert City/Location]. \n\n"
+        "**Key Case Facts (The 4 W's):** QUÉ (What happened): [Detailed summary of the event]. QUIÉN (Who is involved): [List of key parties]. CUÁNDO (When did it happen): [Timeline/date]. DÓNDE (Where did it happen): [Location of the event].\n\n"
         "**Case Analysis (For Internal Use):** [**ANÁLISIS LEGAL TÉCNICO** (Nivel 9-10). **DEBE CITAR SIEMPRE** las leyes, códigos o artículos Ecuatorianos aplicables al caso. No uses lenguaje de cliente.] " 
         "**Recommendation to the Firm (ESTRATEGIA):** [Proponer una estrategia legal sólida de 3 a 5 pasos]. **Client's Objective:** [Describir lo que el cliente desea lograr].\n\n"
         
@@ -209,7 +210,7 @@ def generate_final_response(query, context, history):
         " - **Cese de Interacción (Final):** Si el cliente responde con un simple 'gracias' después de la confirmación, el `user_response` debe ser: 'A ti. Feliz día.' o '¡Gracias a ti!'"
     )
 
-    # 4. Construir la Matriz de Mensajes
+    # 3. Construir la Matriz de Mensajes
     messages = [
         {"role": "system", "content": system_prompt}
     ]
@@ -261,8 +262,6 @@ async def process_query(data: QueryModel):
         except json.JSONDecodeError as e:
             # En caso de que el modelo falle al generar JSON
             print(f"ERROR DECODE: Fallo al decodificar JSON de la respuesta del LLM. {e}")
-            # El mensaje que el usuario estaba viendo venía de un error no controlado en el frontend,
-            # lo reemplazamos con una respuesta controlada y profesional.
             user_response = "Disculpa, ha ocurrido un error de procesamiento. Por favor, reformula tu última respuesta o contáctanos directamente al +593 98 375 6678."
             summary_content = ""
             
