@@ -166,9 +166,8 @@ def retrieve_context(embedding):
 
 def generate_final_response(query, context, history):
     """
-    Genera la respuesta final. El CONTEXTO RAG se inyecta en el System Prompt
-    para acelerar la respuesta del LLM y se exige un resumen interno técnico (Nivel 9-10),
-    incluyendo los 4 W's y datos llenos.
+    Genera la respuesta final. El CONTEXTO RAG se inyecta en el System Prompt.
+    Nueva lógica para forzar la recolección de los 4 W's antes del CTA y corrige el template de email.
     """
     
     # 1. Preparar RAG Context
@@ -182,22 +181,32 @@ def generate_final_response(query, context, history):
         
         "**Reglas Clave:**\n"
         "1. **Alcance:** Limítate a Constitucional, Civil y Familia. Si no aplica, el `user_response` debe usar la 'Regla de Cierre de Contraste' (ver abajo) y `summary_email` debe ser `''`."
-        f"2. **Venta (CTA):** Después del análisis (Nivel 6-7, sin citar artículos o dar pasos procesales), guía siempre a la Consulta de Pago de {CONSULTATION_COST} (acreditable)."
-        "3. **Datos (4 Claves):** Si el cliente acepta el CTA, solicita los 4 datos (Nombre, WhatsApp, Correo, Preferencia de Consulta). Sé acumulativo. **NO** repitas la lista completa, solo pide lo que falta."
-        "4. **Flujo de Datos:** Cuando pidas los datos restantes, **SÉ EXTREMADAMENTE BREVE** (ej. 'Solo necesito tu [dato faltante]'). **NUNCA** repitas la frase de 'Consulta de 40 USD' ni detalles del caso mientras recolectas la información."
+        "2. **Flujo de Conversación (Fase 1: Recolección de Hechos):** Al inicio, tu única tarea es recabar la información detallada del caso: **QUÉ** te sucedió, **QUIÉN** está involucrado, **CUÁNDO** ocurrió, **DÓNDE** fue y cuál es tu **CIUDAD/UBICACIÓN** actual. Pide esta información de forma **conversacional y acumulativa**. **NO** realices análisis o el CTA de venta hasta que estos 5 datos sean recopilados."
+        f"3. **Venta (Fase 2: Análisis y CTA):** SOLO después de recopilar los 5 datos clave, ofrece un análisis preliminar (Nivel 6-7, sin citar artículos o dar pasos procesales) y guía siempre a la Consulta de Pago de {CONSULTATION_COST} (acreditable)."
+        "4. **Datos Contacto (Fase 3: Cierre):** Si el cliente acepta el CTA, solicita los 4 datos de contacto (Nombre, WhatsApp, Correo, Preferencia de Consulta). Sé acumulativo y **EXTREMADAMENTE BREVE**. **NUNCA** repitas la frase de 'Consulta de 40 USD' ni detalles del caso mientras recolectas la información de contacto."
         
         "**Formato de Salida ESTRICTO (JSON):**\n"
-        "**Condición A: VENTA FINALIZADA (4 Datos Recolectados):**\n"
+        "**Condición A: VENTA FINALIZADA (4 Datos de Contacto Recolectados):**\n"
         "   - **`summary_email`:** Contiene el resumen profesional, comenzando con **'Subject:'** y seguido de **'Body:'**. \n"
         "   - **`user_response`:** Contiene **ÚNICAMENTE** el mensaje de confirmación de agendamiento: '¡Perfecto! Ya tengo toda la información. Pronto alguien de nuestro equipo se pondrá en contacto contigo a través de tu [WhatsApp o correo] para coordinar la fecha y hora de tu consulta de 40 USD, que se acreditará al costo total del servicio.' **NO INCLUYAS RESÚMENES DE DATOS EN ESTE CAMPO.**\n\n"
         "**Condición B: CONVERSACIÓN, ANÁLISIS, O CESE DE INTERACCIÓN:**\n"
         "   - **`summary_email`:** Debe ser una **cadena vacía** (`''`).\n"
-        "   - **`user_response`:** Debe ser el mensaje de Agorito para el cliente (e.g., análisis legal, pregunta de seguimiento de datos, o la despedida concisa si el cliente dijo 'gracias').\n\n"
+        "   - **`user_response`:** Debe ser el mensaje de Agorito para el cliente (e.g., recolección de hechos, análisis legal, o pregunta de seguimiento de datos de contacto).\n\n"
         
-        # 🔑 INSTRUCCIÓN DE TEMPLATE MEJORADA PARA RESOLVER EL PROBLEMA DEL EMAIL:
+        # 🔑 TEMPLATE CORREGIDO para evitar la repetición de placeholders en el email.
         "**Contenido del `summary_email` (Solo Condición A):**\n"
-        "Subject: [New Prospect - Legal Advice] o [High-Value Prospect]. Body: **Client Details:** Name: [Insert Name], WhatsApp Number: [Insert Number], Email: [Insert Email], Consultation Type: [Insert Preference], City/Location: [Insert City/Location]. \n\n"
-        "**Key Case Facts (The 4 W's):** QUÉ (What happened): [Detailed summary of the event]. QUIÉN (Who is involved): [List of key parties]. CUÁNDO (When did it happen): [Timeline/date]. DÓNDE (Where did it happen): [Location of the event].\n\n"
+        "Subject: [New Prospect - Legal Advice] o [High-Value Prospect]. Body: \n"
+        "**Client Details:**\n"
+        "Name: [Inserte el Nombre del cliente aquí]\n" 
+        "WhatsApp Number: [Inserte el Número de WhatsApp del cliente aquí]\n"
+        "Email: [Inserte el Correo Electrónico del cliente aquí]\n"
+        "Consultation Type: [Inserte la Preferencia de Consulta aquí (Virtual o Presencial)]\n"
+        "City/Location: [Inserte la Ciudad/Ubicación actual del cliente aquí]\n\n"
+        "**Key Case Facts (The 4 W's):**\n"
+        "QUÉ (What happened): [Resumen detallado del evento basado en la conversación].\n"
+        "QUIÉN (Who is involved): [Lista de partes clave involucradas, ej: padre, madre, vecino, etc.].\n"
+        "CUÁNDO (When did it happen): [Cronología o fecha del evento].\n"
+        "DÓNDE (Where did it happen): [Lugar donde ocurrió el evento].\n\n"
         "**Case Analysis (For Internal Use):** [**ANÁLISIS LEGAL TÉCNICO** (Nivel 9-10). **DEBE CITAR SIEMPRE** las leyes, códigos o artículos Ecuatorianos aplicables al caso. No uses lenguaje de cliente.] " 
         "**Recommendation to the Firm (ESTRATEGIA):** [Proponer una estrategia legal sólida de 3 a 5 pasos]. **Client's Objective:** [Describir lo que el cliente desea lograr].\n\n"
         
