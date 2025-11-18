@@ -215,6 +215,11 @@ def generate_final_response(query, context, history):
         "QUIÉN (Who is involved): [Lista de partes clave involucradas].\n"
         "CUÁNDO (When did it happen): [Cronología o fecha del evento].\n"
         "DÓNDE (Where did it happen): [Lugar donde ocurrió el evento].\n\n"
+        
+        # *** NUEVO CAMPO AGREGADO ***
+        "**Análisis Preliminar Ofrecido al Cliente:**\n"
+        "[Incluir aquí EXACTAMENTE el texto del análisis preliminar de Nivel 6-8 que se le dio al cliente en la Fase 2, justo antes de preguntar por la consulta de 40 USD.]\n\n"
+        
         "**Estrategia Legal Sugerida (Para el equipo de ventas):**\n"
         "[Escribir un análisis de 2-3 frases y la estrategia legal concisa (3 a 5 pasos) aquí. No se requiere citar leyes, solo la estrategia sugerida.]\n"
         
