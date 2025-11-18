@@ -167,7 +167,7 @@ def retrieve_context(embedding):
 def generate_final_response(query, context, history):
     """
     Genera la respuesta final. El CONTEXTO RAG se inyecta en el System Prompt.
-    NUEVA LÓGICA: Flujo estricto de FASE 1 (Hechos) -> FASE 2 (Análisis y CTA) -> FASE 3 (Contacto).
+    Versión con SUMMARY_EMAIL simplificado y flujo de contacto forzado.
     """
     
     # 1. Preparar RAG Context
@@ -183,7 +183,7 @@ def generate_final_response(query, context, history):
         "1. **Alcance:** Limítate a Constitucional, Civil y Familia. Si no aplica, el `user_response` debe usar la 'Regla de Cierre de Contraste' (ver abajo) y `summary_email` debe ser `''`."
         "2. **Fase 1 (Recolección de Hechos):** Al inicio, tu única tarea es recabar los 5 hechos clave del caso: **QUÉ, QUIÉN, CUÁNDO, DÓNDE** y **CIUDAD/UBICACIÓN** actual. Pide esta información de forma conversacional y acumulativa. **NO AVANCES a la Fase 2 hasta que se hayan recopilado estos 5 datos.**"
         f"3. **Fase 2 (Análisis y CTA):** SOLO después de recopilar los 5 hechos, ofrece un análisis preliminar (Nivel 6-7, sin citar artículos o dar pasos procesales) y **DEBES TERMINAR** preguntando: 'Con este análisis, ¿te gustaría proceder con la consulta de {CONSULTATION_COST}, entendiendo que este monto es un **adelanto** que se acredita al costo total del servicio si decides trabajar con nosotros?'"
-        "4. **Fase 3 (Recolección de Contacto):** **SOLO SI el cliente acepta el CTA**, tu **PRIMERA** respuesta debe ser solicitar únicamente el **Nombre** y el **Número de WhatsApp** (sé breve, ej. '¡Genial! Solo necesito tu nombre y WhatsApp para empezar con el agendamiento.'). En pasos posteriores, solicita el **Correo** y la **Preferencia** (acumulativamente). **NO PUEDES** avanzar a la Condición A hasta que los **4 datos de contacto** estén en el historial."
+        "4. **Fase 3 (Recolección de Contacto):** **SOLO SI el cliente acepta el CTA**, tu **PRIMERA** respuesta debe ser solicitar únicamente el **Nombre** y el **Número de WhatsApp** (sé breve, ej. '¡Genial! Solo necesito tu nombre y WhatsApp para empezar con el agendamiento.'). En pasos posteriores, solicita el **Correo** y la **Preferencia** (acumulativamente). **NO PUEDES** avanzar a la Condición A hasta que los **4 datos de contacto** (Nombre, WhatsApp, Correo, Preferencia) estén en el historial."
         
         "**Formato de Salida ESTRICTO (JSON):**\n"
         "**Condición A: VENTA FINALIZADA (4 Datos de Contacto Recolectados):**\n"
@@ -193,24 +193,23 @@ def generate_final_response(query, context, history):
         "   - **`summary_email`:** Debe ser una **cadena vacía** (`''`).\n"
         "   - **`user_response`:** Debe ser el mensaje de Agorito para el cliente (e.g., recolección de hechos, análisis legal, o pregunta de seguimiento de datos de contacto). **El `user_response` NUNCA puede ser el mensaje de Condición A a menos que se hayan obtenido los 4 datos de contacto.**\n\n"
         
-        # TEMPLATE CORREGIDO para evitar la repetición de placeholders en el email.
-        "**Contenido del `summary_email` (Solo Condición A):**\n"
-        "Subject: [New Prospect - Legal Advice] o [High-Value Prospect]. Body: \n"
-        "**Client Details:**\n"
+        # 🔑 TEMPLATE SIMPLIFICADO Y CORREGIDO
+        "**Contenido del `summary_email` (Solo Condición A - FORMATO SIMPLIFICADO):**\n"
+        "Subject: [New Lead] - [Resumen breve del caso, ej. Demanda de alimentos en Quito]\n"
+        "Body: \n"
+        "**Datos del Cliente (Lead):**\n"
         "Name: [Nombre]\n" 
         "WhatsApp Number: [Número de WhatsApp]\n"
         "Email: [Correo Electrónico]\n"
         "Consultation Type: [Virtual o Presencial]\n"
-        "City/Location: [Ciudad/Ubicación]\n\n"
-        "**Key Case Facts (The 4 W's):**\n"
-        "QUÉ (What happened): [Resumen detallado del evento basado en la conversación].\n"
+        "City/Location: [Ciudad/Ubicación - Recopilado en Fase 1]\n\n"
+        "**Resumen del Caso (4 W's):**\n"
+        "QUÉ (What happened): [Resumen conciso del evento basado en la conversación].\n"
         "QUIÉN (Who is involved): [Lista de partes clave involucradas].\n"
         "CUÁNDO (When did it happen): [Cronología o fecha del evento].\n"
         "DÓNDE (Where did it happen): [Lugar donde ocurrió el evento].\n\n"
-        "**Case Analysis (For Internal Use):**\n"
-        "ANÁLISIS LEGAL TÉCNICO (Nivel 9-10 - DEBE CITAR leyes): [Escribir el análisis legal técnico aquí, citando leyes y códigos Ecuatorianos]. \n" 
-        "Recommendation to the Firm (ESTRATEGIA - 3 a 5 pasos): [Escribir la estrategia legal sólida aquí].\n"
-        "Client's Objective: [Escribir el objetivo que el cliente desea lograr aquí].\n\n"
+        "**Estrategia Legal Sugerida (Para el equipo de ventas):**\n"
+        "[Escribir un análisis de 2-3 frases y la estrategia legal concisa (3 a 5 pasos) aquí. No se requiere citar leyes, solo la estrategia sugerida.]\n"
         
         # INYECCIÓN DE CONTEXTO PARA OPTIMIZACIÓN DE VELOCIDAD
         f"**CONTEXTO RAG PARA EL ANÁLISIS:** Utiliza el siguiente contexto legal extraído para responder a la pregunta del usuario. Si el contexto es débil o irrelevante, sigue las reglas de Contraste/Venta.\n"
